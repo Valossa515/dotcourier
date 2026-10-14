@@ -5,7 +5,7 @@ namespace DotCourier;
 /// <summary>
 /// Immutable result of an operation: optional data, an error message, a success flag
 /// and an HTTP-style status code. Serializes to
-/// <c>{ "data", "error", "success", "statusCode", "errorDetails"? }</c>.
+/// <c>{ "data", "error", "errorCode"?, "success", "statusCode", "errorDetails"? }</c>.
 /// </summary>
 /// <typeparam name="T">Payload type.</typeparam>
 public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
@@ -14,16 +14,17 @@ public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
 
     /// <summary>Deserialization constructor. Prefer the static factories.</summary>
     [JsonConstructor]
-    public Response(T? data, string? error, bool isSuccess, int statusCode, object? errorDetails = null)
-        : this(data, error, isSuccess, statusCode, false, null, errorDetails)
+    public Response(T? data, string? error, bool isSuccess, int statusCode, object? errorDetails = null, string? errorCode = null)
+        : this(data, error, isSuccess, statusCode, false, null, errorDetails, errorCode)
     {
     }
 
     private Response(T? data, string? error, bool isSuccess, int statusCode,
-        bool isValidationFailure, string? exceptionType, object? errorDetails)
+        bool isValidationFailure, string? exceptionType, object? errorDetails, string? errorCode = null)
     {
         Data = data;
         Error = error;
+        ErrorCode = errorCode;
         IsSuccess = isSuccess;
         StatusCode = statusCode;
         IsValidationFailure = isValidationFailure;
@@ -38,6 +39,11 @@ public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
     /// <summary>The error message, or <c>null</c> on success.</summary>
     [JsonPropertyName("error")]
     public string? Error { get; }
+
+    /// <summary>Optional machine-readable error code (e.g. <c>"ORD-404"</c>), for clients that branch on errors.</summary>
+    [JsonPropertyName("errorCode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ErrorCode { get; }
 
     /// <summary>Whether the operation succeeded.</summary>
     [JsonPropertyName("success")]
@@ -80,7 +86,7 @@ public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
     {
         if (!IsSuccess)
         {
-            throw new ResponseException(Error ?? GenericErrorMessage, StatusCode);
+            throw new ResponseException(Error ?? GenericErrorMessage, StatusCode) { Code = ErrorCode };
         }
 
         return Data;
@@ -91,8 +97,8 @@ public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
         new(data, null, true, statusCode, false, null, null);
 
     /// <summary>An error response.</summary>
-    public static Response<T> Failure(string message, int statusCode = 500, object? details = null) =>
-        new(default, message, false, statusCode, false, null, details);
+    public static Response<T> Failure(string message, int statusCode = 500, object? details = null, string? code = null) =>
+        new(default, message, false, statusCode, false, null, details, code);
 
     /// <summary>A validation error response (400 by default), flagged by <see cref="IsValidationFailure"/>.</summary>
     public static Response<T> ValidationFailure(string message, object? details = null, int statusCode = 400) =>
@@ -108,7 +114,7 @@ public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
         return exception switch
         {
             ValidationException v => new(default, v.Message, false, v.StatusCode, true, nameof(ValidationException), v.Errors),
-            CourierException c => new(default, c.Message, false, c.StatusCode, false, c.GetType().Name, null),
+            CourierException c => new(default, c.Message, false, c.StatusCode, false, c.GetType().Name, null, c.Code),
             _ => new(default, GenericErrorMessage, false, 500, false, exception.GetType().Name, null),
         };
     }
@@ -117,7 +123,10 @@ public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
     public static implicit operator Response<T>(T value) => Success(value);
 
     /// <summary>Converts a <see cref="ResponseError"/> (from <see cref="Response.Failure"/> and friends) into an error response.</summary>
-    public static implicit operator Response<T>(ResponseError error) => Failure(error.Message, error.StatusCode, error.Details);
+    public static implicit operator Response<T>(ResponseError error) => Failure(error.Message, error.StatusCode, error.Details, error.Code);
+
+    /// <summary>Converts an <see cref="EmptyResponse"/> (from <see cref="Response.NoContent"/>) into a successful response without data.</summary>
+    public static implicit operator Response<T>(EmptyResponse empty) => Success(default, empty.StatusCode);
 
     /// <inheritdoc />
     public bool Equals(Response<T>? other) =>
@@ -127,17 +136,18 @@ public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
         && IsValidationFailure == other.IsValidationFailure
         && EqualityComparer<T?>.Default.Equals(Data, other.Data)
         && Error == other.Error
+        && ErrorCode == other.ErrorCode
         && Equals(ErrorDetails, other.ErrorDetails);
 
     /// <inheritdoc />
     public override bool Equals(object? obj) => Equals(obj as Response<T>);
 
     /// <inheritdoc />
-    public override int GetHashCode() => HashCode.Combine(Data, Error, IsSuccess, StatusCode, IsValidationFailure, ErrorDetails);
+    public override int GetHashCode() => HashCode.Combine(Data, Error, ErrorCode, IsSuccess, StatusCode, IsValidationFailure, ErrorDetails);
 
     /// <summary>Describes the response without printing <see cref="Data"/>, which may hold sensitive values.</summary>
     public override string ToString() =>
-        $"Response {{ Data = {(HasData ? "<present>" : "null")}, Error = {Error}, Success = {IsSuccess}, StatusCode = {StatusCode}, ExceptionType = {ExceptionType} }}";
+        $"Response {{ Data = {(HasData ? "<present>" : "null")}, Error = {Error}, ErrorCode = {ErrorCode}, Success = {IsSuccess}, StatusCode = {StatusCode}, ExceptionType = {ExceptionType} }}";
 }
 
 /// <summary>
@@ -163,7 +173,12 @@ public interface IResponseStatus
 /// <param name="Message">Error message.</param>
 /// <param name="StatusCode">HTTP-style status code.</param>
 /// <param name="Details">Optional structured error payload.</param>
-public readonly record struct ResponseError(string Message, int StatusCode = 500, object? Details = null);
+/// <param name="Code">Optional machine-readable error code.</param>
+public readonly record struct ResponseError(string Message, int StatusCode = 500, object? Details = null, string? Code = null);
+
+/// <summary>A success without payload (e.g. 204); converts implicitly to any <see cref="Response{T}"/>.</summary>
+/// <param name="StatusCode">HTTP-style status code.</param>
+public readonly record struct EmptyResponse(int StatusCode = 204);
 
 /// <summary>Factories with type inference for <see cref="Response{T}"/>.</summary>
 public static class Response
@@ -174,15 +189,28 @@ public static class Response
     /// <summary>A successful response without payload.</summary>
     public static Response<Unit> Success() => Response<Unit>.Success(Unit.Value);
 
+    /// <summary>A 201 response carrying the created resource.</summary>
+    public static Response<T> Created<T>(T? data) => Response<T>.Success(data, 201);
+
+    /// <summary>A 204 success without payload, convertible to any <see cref="Response{T}"/>.</summary>
+    public static EmptyResponse NoContent() => new(204);
+
     /// <summary>An error convertible to any <see cref="Response{T}"/>.</summary>
-    public static ResponseError Failure(string message, int statusCode = 500, object? details = null) => new(message, statusCode, details);
+    public static ResponseError Failure(string message, int statusCode = 500, object? details = null, string? code = null) =>
+        new(message, statusCode, details, code);
 
     /// <summary>A 400 error convertible to any <see cref="Response{T}"/>.</summary>
-    public static ResponseError BadRequest(string message, object? details = null) => new(message, 400, details);
+    public static ResponseError BadRequest(string message, object? details = null, string? code = null) => new(message, 400, details, code);
+
+    /// <summary>A 401 error convertible to any <see cref="Response{T}"/>.</summary>
+    public static ResponseError Unauthorized(string message, string? code = null) => new(message, 401, null, code);
+
+    /// <summary>A 403 error convertible to any <see cref="Response{T}"/>.</summary>
+    public static ResponseError Forbidden(string message, string? code = null) => new(message, 403, null, code);
 
     /// <summary>A 404 error convertible to any <see cref="Response{T}"/>.</summary>
-    public static ResponseError NotFound(string message) => new(message, 404);
+    public static ResponseError NotFound(string message, string? code = null) => new(message, 404, null, code);
 
     /// <summary>A 409 error convertible to any <see cref="Response{T}"/>.</summary>
-    public static ResponseError Conflict(string message) => new(message, 409);
+    public static ResponseError Conflict(string message, string? code = null) => new(message, 409, null, code);
 }

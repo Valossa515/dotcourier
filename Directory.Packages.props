@@ -12,6 +12,9 @@
     <PackageVersion Include="Polly.Core" Version="8.8.0" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.8.0" />
 
+    <!-- DotCourier.FluentValidation -->
+    <PackageVersion Include="FluentValidation" Version="12.2.0" />
+
     <!-- Test-only -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.1" />

@@ -23,6 +23,35 @@ public static class CourierDiagnostics
     private static readonly string? Version =
         typeof(CourierDiagnostics).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, string> Names = new();
+
+    /// <summary>
+    /// The name DotCourier uses for a request type in logs, traces, metrics and error messages:
+    /// the simple name, with generic arguments spelled out (<c>Create&lt;Product&gt;</c> rather than <c>Create`1</c>).
+    /// </summary>
+    public static string GetRequestName(Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        return Names.GetOrAdd(type, Format);
+    }
+
+    private static string Format(Type type)
+    {
+        if (!type.IsGenericType)
+        {
+            return type.Name;
+        }
+
+        var name = type.Name;
+        var tick = name.IndexOf('`', StringComparison.Ordinal);
+        if (tick >= 0)
+        {
+            name = name[..tick];
+        }
+
+        return $"{name}<{string.Join(", ", type.GetGenericArguments().Select(Format))}>";
+    }
+
     internal static readonly ActivitySource ActivitySource = new(SourceName, Version);
     internal static readonly Meter Meter = new(SourceName, Version);
 
@@ -40,7 +69,7 @@ public static class CourierDiagnostics
 public sealed class TelemetryBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
-    private static readonly string RequestName = typeof(TRequest).Name;
+    private static readonly string RequestName = CourierDiagnostics.GetRequestName(typeof(TRequest));
     private static readonly string ActivityName = "courier " + RequestName;
 
     /// <inheritdoc />

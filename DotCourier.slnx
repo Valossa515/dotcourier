@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/DotCourier.AspNetCore/DotCourier.AspNetCore.csproj" />
+    <Project Path="src/DotCourier.FluentValidation/DotCourier.FluentValidation.csproj" />
     <Project Path="src/DotCourier.Resilience/DotCourier.Resilience.csproj" />
     <Project Path="src/DotCourier/DotCourier.csproj" />
   </Folder>

@@ -69,6 +69,7 @@ Elas mantêm o DotCourier previsível; PRs que as quebrem vão receber pedido de
 src/DotCourier/              pacote core
 src/DotCourier.AspNetCore/   Response<T> → IResult / IActionResult
 src/DotCourier.Resilience/   behaviors baseados em Polly
+src/DotCourier.FluentValidation/  IValidator<T> no pipeline
 tests/DotCourier.Tests/      xUnit, roda em net8.0 e net10.0
 assets/                      logo, ícone e imagens do README
 ```

@@ -12,7 +12,7 @@ namespace DotCourier.Behaviors;
 public sealed partial class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
-    private static readonly string RequestName = typeof(TRequest).Name;
+    private static readonly string RequestName = CourierDiagnostics.GetRequestName(typeof(TRequest));
     private readonly ILogger _logger;
 
     /// <summary>Creates the behavior.</summary>

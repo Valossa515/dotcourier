@@ -1,5 +1,6 @@
 using DotCourier;
 using DotCourier.Behaviors;
+using DotCourier.Internal;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -45,10 +46,13 @@ public static class CourierServiceCollectionExtensions
         services.TryAdd(new ServiceDescriptor(typeof(ISender), sp => sp.GetRequiredService<ICourier>(), configuration.Lifetime));
         services.TryAdd(new ServiceDescriptor(typeof(IPublisher), sp => sp.GetRequiredService<ICourier>(), configuration.Lifetime));
 
+        var openRequestHandlers = new List<Type>();
         foreach (var assembly in configuration.AssembliesToRegister)
         {
-            RegisterAssembly(services, assembly, configuration.Lifetime);
+            RegisterAssembly(services, assembly, configuration.Lifetime, openRequestHandlers);
         }
+
+        services.TryAddSingleton(new GenericRequestHandlerRegistry(openRequestHandlers.Distinct().ToArray()));
 
         foreach (var register in configuration.ServiceRegistrations)
         {
@@ -59,11 +63,21 @@ public static class CourierServiceCollectionExtensions
         return services;
     }
 
-    private static void RegisterAssembly(IServiceCollection services, System.Reflection.Assembly assembly, ServiceLifetime lifetime)
+    private static void RegisterAssembly(IServiceCollection services, System.Reflection.Assembly assembly, ServiceLifetime lifetime, List<Type> openRequestHandlers)
     {
-        var types = assembly.DefinedTypes.Where(t => t is { IsClass: true, IsAbstract: false, ContainsGenericParameters: false });
-        foreach (var type in types)
+        foreach (var type in assembly.DefinedTypes.Where(t => t is { IsClass: true, IsAbstract: false }))
         {
+            if (type.IsGenericTypeDefinition)
+            {
+                RegisterOpenGeneric(services, type, lifetime, openRequestHandlers);
+                continue;
+            }
+
+            if (type.ContainsGenericParameters)
+            {
+                continue;
+            }
+
             foreach (var @interface in type.ImplementedInterfaces.Where(i => i.IsGenericType))
             {
                 var definition = @interface.GetGenericTypeDefinition();
@@ -76,6 +90,27 @@ public static class CourierServiceCollectionExtensions
                 {
                     services.TryAddEnumerable(new ServiceDescriptor(@interface, type, lifetime));
                 }
+            }
+        }
+    }
+
+    private static void RegisterOpenGeneric(IServiceCollection services, System.Reflection.TypeInfo type, ServiceLifetime lifetime, List<Type> openRequestHandlers)
+    {
+        var parameters = type.GenericTypeParameters;
+        foreach (var @interface in type.ImplementedInterfaces.Where(i => i.IsGenericType))
+        {
+            var definition = @interface.GetGenericTypeDefinition();
+            if (definition == typeof(IRequestHandler<,>))
+            {
+                // e.g. CreateHandler<T> : IRequestHandler<Create<T>, T>: closed on first dispatch.
+                openRequestHandlers.Add(type);
+            }
+            else if (Array.IndexOf(EnumerableServices, definition) >= 0
+                && @interface.GetGenericArguments().SequenceEqual(parameters))
+            {
+                // e.g. AuditAll<T> : INotificationHandler<T>: the container closes these itself,
+                // and skips them for types that do not satisfy the constraints.
+                services.TryAddEnumerable(new ServiceDescriptor(definition, type, lifetime));
             }
         }
     }

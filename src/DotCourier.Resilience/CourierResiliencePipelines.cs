@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Threading.RateLimiting;
+using DotCourier.Behaviors;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Polly;
@@ -47,10 +48,11 @@ internal sealed partial class CourierResiliencePipelines
 
     public void RecordRejection(Type requestType, ResilienceStrategy strategy)
     {
-        LogRejected(strategy, requestType.Name);
+        var requestName = CourierDiagnostics.GetRequestName(requestType);
+        LogRejected(strategy, requestName);
         Rejections.Add(1, new TagList
         {
-            { "courier.request.type", requestType.Name },
+            { "courier.request.type", requestName },
             { "courier.resilience.strategy", strategy.ToString() },
         });
     }
@@ -70,7 +72,8 @@ internal sealed partial class CourierResiliencePipelines
 
     private ResiliencePipeline? Build(Type requestType, ResilienceStrategy strategy, ResilienceSettings settings)
     {
-        var builder = new ResiliencePipelineBuilder { Name = $"{requestType.Name}.{strategy}" };
+        var requestName = CourierDiagnostics.GetRequestName(requestType);
+        var builder = new ResiliencePipelineBuilder { Name = $"{requestName}.{strategy}" };
         switch (strategy)
         {
             case ResilienceStrategy.Retry when settings.Retry is { Enabled: true, MaxAttempts: > 1 } retry:
@@ -86,9 +89,9 @@ internal sealed partial class CourierResiliencePipelines
                     {
                         // AttemptNumber is the zero-based index of the retry, so the attempt about to
                         // run (counting the first call) is AttemptNumber + 2.
-                        LogRetrying(requestType.Name, args.Outcome.Exception?.GetType().Name, args.AttemptNumber + 2, retry.MaxAttempts,
+                        LogRetrying(requestName, args.Outcome.Exception?.GetType().Name, args.AttemptNumber + 2, retry.MaxAttempts,
                             args.RetryDelay.TotalMilliseconds);
-                        RetryAttempts.Add(1, new KeyValuePair<string, object?>("courier.request.type", requestType.Name));
+                        RetryAttempts.Add(1, new KeyValuePair<string, object?>("courier.request.type", requestName));
                         return default;
                     },
                 });
@@ -104,12 +107,12 @@ internal sealed partial class CourierResiliencePipelines
                     ShouldHandle = args => ValueTask.FromResult(args.Outcome.Exception is { } ex && _options.ShouldHandle(ex)),
                     OnOpened = args =>
                     {
-                        LogCircuitOpened(requestType.Name, args.BreakDuration.TotalSeconds);
+                        LogCircuitOpened(requestName, args.BreakDuration.TotalSeconds);
                         return default;
                     },
                     OnClosed = _ =>
                     {
-                        LogCircuitClosed(requestType.Name);
+                        LogCircuitClosed(requestName);
                         return default;
                     },
                 });
