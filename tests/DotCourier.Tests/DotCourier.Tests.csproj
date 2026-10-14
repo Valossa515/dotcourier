@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DotCourier\DotCourier.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.AspNetCore\DotCourier.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.Resilience\DotCourier.Resilience.csproj" />
   </ItemGroup>
 
 </Project>

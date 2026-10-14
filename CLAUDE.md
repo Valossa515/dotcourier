@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.1.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.2.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -43,15 +43,30 @@ dotcourier/
 │   │   ├── Validation/          # IRequestValidator<T>, DataAnnotations evaluator
 │   │   ├── DependencyInjection/ # AddCourier + CourierConfiguration
 │   │   └── Internal/            # per-request-type cached wrappers (no reflection on the hot path)
-│   └── DotCourier.AspNetCore/   # Response<T>.ToResult() / ToActionResult()
-└── tests/DotCourier.Tests/      # xUnit, runs on net8.0 and net10.0
+│   ├── DotCourier.AspNetCore/   # Response<T>.ToResult() / ToActionResult()
+│   └── DotCourier.Resilience/   # retry / circuit breaker / rate limiter / bulkhead on Polly v8
+├── tests/DotCourier.Tests/      # xUnit, runs on net8.0 and net10.0 (Resilience/ subfolder per module)
+├── assets/                      # logo + icon (SVG sources, PNGs rendered from them), before-after.svg
+├── .github/                     # CI, NuGet publish, dependabot, issue/PR templates
+└── README.md / README.pt-BR.md, CONTRIBUTING*, SECURITY*, CODE_OF_CONDUCT*  (EN + pt-BR pairs)
 ```
+
+### Modules
+
+| Package | Purpose |
+|---|---|
+| `DotCourier` | Dispatcher, ordered pipeline, notifications, `Response<T>`, logging/telemetry/validation/timeout behaviors |
+| `DotCourier.AspNetCore` | `Response<T>` → `IResult` / `IActionResult` |
+| `DotCourier.Resilience` | `cfg.AddResilience(o => ...)`: Polly pipelines cached per (request type, strategy) in a singleton; rejections thrown as `CourierException` subclasses (`CircuitOpenException` 503, `RateLimitExceededException` 429, `BulkheadRejectedException` 503). Only the breaker is on by default. Breaker outside retry and bulkhead inside retry are pinned by tests. |
 
 ## Key mechanics
 
 - **Pipeline order:** behaviors are registered sorted by `order` (stable), because MS DI
   returns `IEnumerable<IPipelineBehavior<,>>` in registration order and the first is outermost.
   Behaviors registered directly in `IServiceCollection` (outside `AddCourier`) bypass sorting.
+- **Extension modules** plug in through `CourierConfiguration`: `AddOpenBehavior(type, BehaviorOrder.X)`
+  for behaviors and `ConfigureServices(...)` for their own services, so everything lands in the
+  single sorted registration. A module's `cfg.AddX()` extension lives in namespace `DotCourier`.
 - **Dispatch path:** `Courier` caches one `RequestHandlerWrapperImpl<TRequest,TResponse>` per
   request type in a static `ConcurrentDictionary`; the handler is resolved eagerly so a missing
   one fails before any behavior runs.
@@ -72,6 +87,13 @@ dotnet pack -c Release -o artifacts
 `TreatWarningsAsErrors` is on and `src/` generates XML docs, so every public member needs a
 `<summary>`.
 
+Assets: the PNGs in `assets/` are rendered from the SVGs with headless Edge/Chrome
+(`--headless=new --screenshot`, `--default-background-color=00000000` for transparency). Edit the
+SVG, then re-render; `icon.png` is the NuGet package icon. READMEs reference images by absolute
+`raw.githubusercontent.com` URLs so they also render on nuget.org.
+
+Docs come in EN + pt-BR pairs; update both.
+
 ## Release
 
 1. Create a GitHub Release tagged `vX.Y.Z`.
@@ -81,9 +103,9 @@ dotnet pack -c Release -o artifacts
 
 ## Roadmap (Spring Courier module → DotCourier package)
 
-| Spring Courier | DotCourier (planned) |
+| Spring Courier | DotCourier |
 |---|---|
-| `spring-courier-resilience` | `DotCourier.Resilience` (Polly v8) |
+| `spring-courier-resilience` + core `RetryBehavior` | `DotCourier.Resilience` (Polly v8) ✅ |
 | `spring-courier-cache-redis` + cache/idempotency | `DotCourier.Caching` (`HybridCache`/`IDistributedCache`) |
 | `TransactionBehavior` | `DotCourier.EntityFrameworkCore` |
 | `spring-courier-outbox` | `DotCourier.Outbox.EntityFrameworkCore` |

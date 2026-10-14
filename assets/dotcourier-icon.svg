@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-200 -200 400 400" role="img" aria-label="DotCourier">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7F5FD"/>
+      <stop offset="1" stop-color="#ECE8FA"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#B9A8F0"/>
+      <stop offset="1" stop-color="#512BD4"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7C5CE6"/>
+      <stop offset="1" stop-color="#3B1FA3"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCD6EE"/>
+    </linearGradient>
+    <linearGradient id="bag" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6E4FE0"/>
+      <stop offset="1" stop-color="#3B1FA3"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#C9BBFF"/>
+      <stop offset="0.45" stop-color="#7C5CE6"/>
+      <stop offset="1" stop-color="#512BD4" stop-opacity="0"/>
+    </radialGradient>
+    <marker id="head-in" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.6" markerHeight="3.6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#9780E5"/>
+    </marker>
+    <marker id="head-out" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.6" markerHeight="3.6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#512BD4"/>
+    </marker>
+  </defs>
+  <rect x="-200" y="-200" width="400" height="400" rx="72" fill="url(#bg)"/>
+  <g transform="translate(0 10)">
+    <circle r="168" fill="none" stroke="url(#ring)" stroke-width="14"/>
+    <path d="M0 -150 L118 -108 L112 30 Q96 118 0 160 Q-96 118 -112 30 L-118 -108 Z"
+          fill="url(#shield)" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round"/>
+    <!-- robot courier -->
+    <g stroke="#2E1A6E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <!-- antenna with the "dot" -->
+      <line x1="0" y1="-110" x2="0" y2="-140"/>
+      <circle cx="0" cy="-152" r="26" fill="url(#glow)" stroke="none"/>
+      <circle cx="0" cy="-152" r="12" fill="#512BD4"/>
+      <circle cx="-4" cy="-156" r="4" fill="#FFFFFF" stroke="none"/>
+
+      <!-- legs -->
+      <rect x="-30" y="72" width="22" height="58" rx="10" fill="url(#metal)"/>
+      <rect x="8" y="72" width="22" height="58" rx="10" fill="url(#metal)"/>
+      <ellipse cx="-22" cy="134" rx="22" ry="11" fill="url(#metal)"/>
+      <ellipse cx="22" cy="134" rx="22" ry="11" fill="url(#metal)"/>
+
+      <!-- body -->
+      <rect x="-46" y="-6" width="92" height="90" rx="26" fill="url(#metal)"/>
+      <circle cx="-20" cy="20" r="9" fill="#512BD4" stroke="#FFFFFF" stroke-width="3"/>
+
+      <!-- arms -->
+      <path d="M-46 14 Q-78 30 -98 30" fill="none" stroke-width="14" stroke="#2E1A6E"/>
+      <path d="M-46 14 Q-78 30 -98 30" fill="none" stroke-width="7" stroke="#F1EEFA"/>
+      <circle cx="-102" cy="30" r="10" fill="url(#metal)"/>
+      <path d="M46 14 Q66 36 56 58" fill="none" stroke-width="14" stroke="#2E1A6E"/>
+      <path d="M46 14 Q66 36 56 58" fill="none" stroke-width="7" stroke="#F1EEFA"/>
+
+      <!-- strap + messenger bag -->
+      <path d="M-36 -2 L40 66" fill="none" stroke-width="9" stroke="#3B1FA3"/>
+      <rect x="22" y="44" width="62" height="50" rx="10" fill="url(#bag)"/>
+      <path d="M22 56 Q53 70 84 56" fill="none" stroke="#2E1A6E" stroke-width="4"/>
+      <text x="53" y="88" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="30" font-weight="800" fill="#FFFFFF" stroke="none">C</text>
+
+      <!-- head -->
+      <rect x="-56" y="-112" width="112" height="100" rx="40" fill="url(#metal)"/>
+      <path d="M-30 -66 Q-21 -76 -12 -66" fill="none" stroke-width="6"/>
+      <path d="M12 -66 Q21 -76 30 -66" fill="none" stroke-width="6"/>
+      <path d="M-16 -44 Q0 -30 16 -44" fill="none" stroke-width="5"/>
+      <circle cx="-36" cy="-46" r="7" fill="#C9BBFF" stroke="none" opacity="0.8"/>
+      <circle cx="36" cy="-46" r="7" fill="#C9BBFF" stroke="none" opacity="0.8"/>
+    </g>
+  </g>
+</svg>

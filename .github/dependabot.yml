@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # Keeps workflow actions on supported majors (e.g. away from deprecated Node runtimes).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Library dependencies are pinned to the 8.0 line on purpose (net8.0 consumers must not be
+      # forced up), so only patch updates are proposed for them.
+      microsoft-extensions:
+        patterns: ["Microsoft.Extensions.*"]
+        update-types: ["patch"]
+      polly:
+        patterns: ["Polly*"]
+      test:
+        patterns: ["xunit*", "Microsoft.NET.Test.Sdk"]
+    ignore:
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
