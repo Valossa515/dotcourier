@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using DotCourier.Behaviors;
 using DotCourier.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -91,7 +92,7 @@ public partial class Courier : ICourier
         if (notification is not INotification typed)
         {
             throw new ArgumentException(
-                $"'{notification.GetType().Name}' does not implement {nameof(INotification)}.", nameof(notification));
+                $"'{CourierDiagnostics.GetRequestName(notification.GetType())}' does not implement {nameof(INotification)}.", nameof(notification));
         }
 
         var wrapper = NotificationHandlers.GetOrAdd(notification.GetType(), static type =>
@@ -101,7 +102,7 @@ public partial class Courier : ICourier
 
         if (executors.Length == 0)
         {
-            LogNoNotificationHandlers(notification.GetType().Name);
+            LogNoNotificationHandlers(CourierDiagnostics.GetRequestName(notification.GetType()));
             return Task.CompletedTask;
         }
 
@@ -129,12 +130,12 @@ public partial class Courier : ICourier
     {
         if (exception is CourierException)
         {
-            LogCourierFailure(request.GetType().Name, exception.GetType().Name, exception.Message);
+            LogCourierFailure(CourierDiagnostics.GetRequestName(request.GetType()), exception.GetType().Name, exception.Message);
         }
         else if (!ExceptionLogMarker.IsMarked(exception))
         {
             // Only when the logging behavior did not already record it (e.g. it is disabled).
-            LogUnexpectedFailure(exception, request.GetType().Name);
+            LogUnexpectedFailure(exception, CourierDiagnostics.GetRequestName(request.GetType()));
         }
 
         return Response<TResponse>.FromException(exception);
@@ -190,7 +191,7 @@ public partial class Courier : ICourier
         }
         catch (Exception ex)
         {
-            LogNotificationHandlerFailure(ex, executor.HandlerInstance.GetType().Name, notification.GetType().Name);
+            LogNotificationHandlerFailure(ex, CourierDiagnostics.GetRequestName(executor.HandlerInstance.GetType()), CourierDiagnostics.GetRequestName(notification.GetType()));
         }
     }
 

@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using DotCourier.Behaviors;
+
 namespace DotCourier;
 
 /// <summary>
@@ -26,6 +29,12 @@ public class CourierException : Exception
 
     /// <summary>HTTP-style status code for the error response.</summary>
     public int StatusCode { get; }
+
+    /// <summary>
+    /// Optional machine-readable error code, propagated to <see cref="Response{T}.ErrorCode"/>.
+    /// Set it with an initializer: <c>throw new CourierException("...", 409) { Code = "STK-001" };</c>
+    /// </summary>
+    public string? Code { get; init; }
 }
 
 /// <summary>No <see cref="IRequestHandler{TRequest,TResponse}"/> is registered for a request type.</summary>
@@ -33,7 +42,7 @@ public sealed class HandlerNotFoundException : CourierException
 {
     /// <summary>Creates the exception for <paramref name="requestType"/>.</summary>
     public HandlerNotFoundException(Type requestType)
-        : base($"No handler registered for request type '{requestType.Name}'.")
+        : base($"No handler registered for request type '{CourierDiagnostics.GetRequestName(requestType)}'.")
     {
         RequestType = requestType;
     }
@@ -45,7 +54,11 @@ public sealed class HandlerNotFoundException : CourierException
 /// <summary>A field-level validation failure.</summary>
 /// <param name="Field">Name of the invalid member (empty for object-level errors).</param>
 /// <param name="Message">Description of the failure.</param>
-public sealed record ValidationError(string Field, string Message);
+/// <param name="Code">Optional machine-readable code (e.g. a FluentValidation error code).</param>
+public sealed record ValidationError(
+    string Field,
+    string Message,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Code = null);
 
 /// <summary>Request validation failed. Maps to a 400 response carrying <see cref="Errors"/> as details.</summary>
 public sealed class ValidationException : CourierException
@@ -77,7 +90,7 @@ public sealed class RequestTimeoutException : CourierException
 {
     /// <summary>Creates the exception.</summary>
     public RequestTimeoutException(Type requestType, TimeSpan timeout)
-        : base($"Request '{requestType.Name}' timed out after {timeout.TotalMilliseconds:0} ms", 504)
+        : base($"Request '{CourierDiagnostics.GetRequestName(requestType)}' timed out after {timeout.TotalMilliseconds:0} ms", 504)
     {
         RequestType = requestType;
         Timeout = timeout;
@@ -95,7 +108,7 @@ public sealed class NotificationHandlerException : CourierException
 {
     /// <summary>Creates the exception.</summary>
     public NotificationHandlerException(Type handlerType, Type notificationType, Exception innerException)
-        : base($"Notification handler '{handlerType.Name}' failed for '{notificationType.Name}'", innerException)
+        : base($"Notification handler '{CourierDiagnostics.GetRequestName(handlerType)}' failed for '{CourierDiagnostics.GetRequestName(notificationType)}'", innerException)
     {
         HandlerType = handlerType;
         NotificationType = notificationType;

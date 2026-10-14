@@ -31,6 +31,12 @@ public sealed class CourierConfiguration
 
     internal List<Assembly> AssembliesToRegister { get; } = [];
 
+    /// <summary>
+    /// The assemblies registered for scanning so far. Extension packages read it inside
+    /// <see cref="ConfigureServices"/>, which runs after configuration is complete.
+    /// </summary>
+    public IReadOnlyList<Assembly> Assemblies => AssembliesToRegister;
+
     internal IReadOnlyList<BehaviorRegistration> Behaviors => _behaviors;
 
     internal List<Action<IServiceCollection>> ServiceRegistrations { get; } = [];
