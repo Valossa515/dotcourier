@@ -92,6 +92,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier`](https://www.nuget.org/packages/DotCourier) | Dispatcher, pipeline, notifications, `Response<T>`, logging, validation, telemetry, timeouts |
 | [`DotCourier.AspNetCore`](https://www.nuget.org/packages/DotCourier.AspNetCore) | `Response<T>.ToResult()` (Minimal APIs) and `ToActionResult()` (MVC) |
 | [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter and bulkhead on Polly v8 |
+| [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Runs your `IValidator<T>` in the pipeline; FluentValidation exceptions become 400 |
 
 All packages target **net8.0** and **net10.0**.
 
@@ -163,6 +164,44 @@ public sealed class OutOfStockException(string sku) : CourierException($"SKU {sk
 
 When a handler already returns `Response<T>`, `Dispatch` hands it back as-is instead of wrapping it twice.
 
+### Status helpers and error codes
+
+Handlers that return `Response<T>` pick the status with helpers. No base class, no `try/catch`:
+
+```csharp
+public sealed class ShipOrderHandler(AppDbContext db) : ICommandHandler<ShipOrder, Response<ShipmentDto>>
+{
+    public async Task<Response<ShipmentDto>> Handle(ShipOrder cmd, CancellationToken ct)
+    {
+        var order = await db.Orders.FindAsync([cmd.OrderId], ct);
+        if (order is null) return Response.NotFound("Order not found", code: "ORD-404");
+        if (order.OwnerId != cmd.UserId) return Response.Forbidden("Not your order");
+        if (order.Shipped) return Response.NoContent();
+
+        var shipment = order.Ship();
+        await db.SaveChangesAsync(ct);
+        return Response.Created(shipment.ToDto());
+    }
+}
+```
+
+| Helper | Status |
+|---|---|
+| return the value / `Response.Success(x)` | 200 |
+| `Response.Created(x)` | 201 |
+| `Response.NoContent()` | 204 (`ToResult()` sends no body) |
+| `Response.BadRequest(msg)` | 400 |
+| `Response.Unauthorized(msg)` | 401 |
+| `Response.Forbidden(msg)` | 403 |
+| `Response.NotFound(msg)` | 404 |
+| `Response.Conflict(msg)` | 409 |
+| `Response.Failure(msg, status)` | any |
+
+Every error helper takes an optional `code`, serialized as `"errorCode"` (omitted when absent) so
+clients can branch on it. Exceptions carry one too:
+`throw new CourierException("Out of stock", 409) { Code = "STK-001" };`
+Validation errors have a per-field `code` (FluentValidation's `WithErrorCode` is kept).
+
 ## 🧩 Pipeline
 
 ```csharp
@@ -214,6 +253,71 @@ public sealed class RegisterValidator(AppDbContext db) : IRequestValidator<Regis
             : [];
 }
 ```
+
+### FluentValidation
+
+```bash
+dotnet add package DotCourier.FluentValidation
+```
+
+```csharp
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddFluentValidation());
+
+public sealed class SignupValidator : AbstractValidator<Signup>
+{
+    public SignupValidator() => RuleFor(x => x.Email).NotEmpty().EmailAddress().WithErrorCode("EMAIL-01");
+}
+```
+
+- Your `IValidator<T>`s run in the validation step, before the handler, and their failures are
+  merged with DataAnnotations into a **single 400**. Validators in the scanned assemblies are
+  registered for you (pass `registerValidators: false` if you already use `AddValidatorsFromAssembly`).
+- A FluentValidation `ValidationException` thrown **inside** a handler (e.g. `ValidateAndThrowAsync`)
+  also becomes a 400. Without this package it is an unexpected exception and `Dispatch` answers 500.
+  The translation happens right around the handler, so retry never repeats an invalid request.
+
+## 🧬 Generic requests and handlers
+
+Everything Spring Courier supports works, and DotCourier goes further:
+
+```csharp
+// One open generic handler serves Create<Product>, Create<Order>, ...
+public sealed record Create<T>(T Entity) : ICommand<T>;
+
+public sealed class CreateHandler<T>(AppDbContext db) : ICommandHandler<Create<T>, T>
+    where T : class, IEntity
+{
+    public async Task<T> Handle(Create<T> cmd, CancellationToken ct)
+    {
+        db.Set<T>().Add(cmd.Entity);
+        await db.SaveChangesAsync(ct);
+        return cmd.Entity;
+    }
+}
+
+// Runs for every notification that implements IAudited.
+public sealed class AuditNotifications<T>(IAuditLog audit) : INotificationHandler<T>
+    where T : INotification, IAudited
+{
+    public Task Handle(T notification, CancellationToken ct) => audit.Write(notification, ct);
+}
+```
+
+| Shape | Spring Courier | DotCourier |
+|---|---|---|
+| Handler inheriting from a generic base (`Handler : BaseHandler<Cmd, Result>`) | ✅ | ✅ |
+| Handler through your own interface (`IMyHandler<T> : IRequestHandler<T, X>`) | ✅ | ✅ |
+| Generic request with one open handler (`CreateHandler<T>` for `Create<T>`) | ❌ | ✅ |
+| Open notification handler / processor / validator (`X<T> : INotificationHandler<T>`) | ❌ | ✅ |
+
+Open request handlers are closed on the **first dispatch** of each request type: the type arguments
+are inferred from the request, constraints are checked (a request that does not satisfy them gets
+`HandlerNotFoundException`), and the activation factory is cached. There is no startup cost and no
+limit on how many closed types you use. If two open handlers fit the same request, DotCourier throws
+instead of picking one. Logs, traces and metrics name these requests `Create<Product>`, not
+``Create`1``.
 
 ## 🛡️ Resilience
 
@@ -309,6 +413,8 @@ builder.Services.AddOpenTelemetry()
 2. Replace `services.AddMediatR(cfg => ...)` with `services.AddCourier(cfg => ...)`.
    `RegisterServicesFromAssembly*`, `AddBehavior` and `AddOpenBehavior` keep their names.
 3. `IMediator`, `ISender` and `IPublisher` still resolve. Inject `ICourier` where you want `Dispatch`.
+4. Using FluentValidation with a hand-written `ValidationBehavior`? Delete it, add
+   `DotCourier.FluentValidation` and call `cfg.AddFluentValidation()`.
 
 Differences to watch for:
 
@@ -324,6 +430,8 @@ Differences to watch for:
 | License | commercial (license key) | **MIT** |
 | Request / handler / behavior API | ✅ | ✅ same names |
 | Built-in validation, logging, telemetry | ❌ write your own | ✅ |
+| FluentValidation in the pipeline | ❌ write your own behavior | ✅ `DotCourier.FluentValidation` |
+| Generic request handlers (`Create<T>`) | opt-in, closed at startup | ✅ closed on first dispatch |
 | Retry / circuit breaker / rate limit / bulkhead | ❌ | ✅ `DotCourier.Resilience` |
 | Exceptions → status-coded `Response<T>` | ❌ | ✅ `Dispatch` |
 | Explicit behavior ordering | registration order | ✅ `BehaviorOrder` |
@@ -336,6 +444,9 @@ Each [Spring Courier](https://github.com/Valossa515/spring-courier) module gets 
 - [x] Core: dispatcher, pipeline, validation, telemetry, timeouts
 - [x] ASP.NET Core integration
 - [x] Resilience: retry, circuit breaker, rate limiter, bulkhead (Polly v8)
+- [x] FluentValidation integration
+- [x] Generic requests and open generic handlers
+- [x] Status helpers and machine-readable error codes
 - [ ] Caching and idempotency: `HybridCache` / `IDistributedCache` (Redis included)
 - [ ] Transactions: EF Core / `TransactionScope` behavior
 - [ ] Transactional outbox with EF Core

@@ -68,6 +68,7 @@ These keep DotCourier predictable; PRs that break them will be asked to change.
 src/DotCourier/              core package
 src/DotCourier.AspNetCore/   Response<T> → IResult / IActionResult
 src/DotCourier.Resilience/   Polly-based behaviors
+src/DotCourier.FluentValidation/  IValidator<T> in the pipeline
 tests/DotCourier.Tests/      xUnit, runs on net8.0 and net10.0
 assets/                      logo, icon and README images
 ```

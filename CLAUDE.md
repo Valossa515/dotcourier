@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.2.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.3.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -44,7 +44,8 @@ dotcourier/
 │   │   ├── DependencyInjection/ # AddCourier + CourierConfiguration
 │   │   └── Internal/            # per-request-type cached wrappers (no reflection on the hot path)
 │   ├── DotCourier.AspNetCore/   # Response<T>.ToResult() / ToActionResult()
-│   └── DotCourier.Resilience/   # retry / circuit breaker / rate limiter / bulkhead on Polly v8
+│   ├── DotCourier.Resilience/   # retry / circuit breaker / rate limiter / bulkhead on Polly v8
+│   └── DotCourier.FluentValidation/ # IValidator<T> in the validation step + exception translation
 ├── tests/DotCourier.Tests/      # xUnit, runs on net8.0 and net10.0 (Resilience/ subfolder per module)
 ├── assets/                      # logo + icon (SVG sources, PNGs rendered from them), before-after.svg
 ├── .github/                     # CI, NuGet publish, dependabot, issue/PR templates
@@ -57,6 +58,7 @@ dotcourier/
 |---|---|
 | `DotCourier` | Dispatcher, ordered pipeline, notifications, `Response<T>`, logging/telemetry/validation/timeout behaviors |
 | `DotCourier.AspNetCore` | `Response<T>` → `IResult` / `IActionResult` |
+| `DotCourier.FluentValidation` | `cfg.AddFluentValidation()`: registers an open `IRequestValidator<>` adapter over `IValidator<T>` (merged into the core validation 400) and scans validators; an innermost (`int.MaxValue`) behavior turns FluentValidation's exception into DotCourier's `ValidationException` so retry never repeats an invalid request (pinned by a test). |
 | `DotCourier.Resilience` | `cfg.AddResilience(o => ...)`: Polly pipelines cached per (request type, strategy) in a singleton; rejections thrown as `CourierException` subclasses (`CircuitOpenException` 503, `RateLimitExceededException` 429, `BulkheadRejectedException` 503). Only the breaker is on by default. Breaker outside retry and bulkhead inside retry are pinned by tests. |
 
 ## Key mechanics
@@ -75,6 +77,16 @@ dotcourier/
   `"An internal error occurred"` / 500. Keep this leak-proof.
 - **Validation:** DataAnnotations are read from properties *and* matching constructor
   parameters, so positional records work.
+- **Generics:** scanning keeps open generic types. If the interface's type arguments are exactly
+  the class's type parameters (`X<T> : INotificationHandler<T>`), it is registered as an open
+  generic for the container (enumerable services only). Open `IRequestHandler<,>` implementations
+  (`CreateHandler<T> : IRequestHandler<Create<T>, T>`) go to `GenericRequestHandlerRegistry`, which
+  unifies the handler's interface with the closed service on the first miss, checks constraints via
+  `MakeGenericType`, caches an `ActivatorUtilities` factory, and throws if two open handlers fit.
+- **Names:** always use `CourierDiagnostics.GetRequestName(type)` for request types in logs,
+  metrics and messages (`Create<Product>`, not ``Create`1``).
+- **Error codes:** `Response<T>.ErrorCode` (JSON `errorCode`, omitted when null) comes from the
+  helpers' `code:`, `CourierException.Code` or `ResponseError.Code`; `ValidationError.Code` per field.
 
 ## Build & Test
 
