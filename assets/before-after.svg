@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 1200 630" font-family="'JetBrains Mono','Cascadia Code','Fira Code',Consolas,Menlo,monospace" font-size="13">
+  <defs>
+    <linearGradient id="bgBefore" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1f1f"/>
+      <stop offset="1" stop-color="#1a1414"/>
+    </linearGradient>
+    <linearGradient id="bgAfter" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#231d3a"/>
+      <stop offset="1" stop-color="#16122a"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <style>
+      text { white-space: pre; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+      .kw  { fill: #c792ea; }
+      .typ { fill: #82aaff; }
+      .str { fill: #c3e88d; }
+      .com { fill: #6a737d; font-style: italic; }
+      .fn  { fill: #82aaff; }
+      .txt { fill: #d6deeb; }
+      .hi  { fill: #ff6b9d; font-weight: 700; }
+      .ok  { fill: #4ade80; font-weight: 700; }
+      .title { fill: #ffffff; font-weight: 700; font-size: 17px; }
+      .sub   { fill: #94a3b8; font-size: 12px; }
+      .win   { fill: #c4b5fd; font-size: 12.5px; }
+      .dot-r { fill: #ff5f56; }
+      .dot-y { fill: #ffbd2e; }
+      .dot-g { fill: #27c93f; }
+    </style>
+  </defs>
+
+  <!-- ===== BEFORE PANEL ===== -->
+  <g transform="translate(24,30)" filter="url(#shadow)">
+    <rect width="566" height="570" rx="12" fill="url(#bgBefore)"/>
+    <rect width="566" height="36" rx="12" fill="#0f0a0a"/>
+    <rect y="24" width="566" height="12" fill="#0f0a0a"/>
+    <circle class="dot-r" cx="20" cy="18" r="6"/>
+    <circle class="dot-y" cx="40" cy="18" r="6"/>
+    <circle class="dot-g" cx="60" cy="18" r="6"/>
+    <text x="283" y="24" text-anchor="middle" class="title">❌ Before: MediatR + hand-rolled pieces</text>
+    <text x="283" y="58" text-anchor="middle" class="sub">license key · behaviors you maintain · try/catch in every endpoint</text>
+
+    <g transform="translate(20,92)">
+      <text y="0"><tspan class="txt">builder.Services.</tspan><tspan class="fn">AddMediatR</tspan><tspan class="txt">(cfg =&gt;</tspan></text>
+      <text y="20"><tspan class="txt">{</tspan></text>
+      <text y="40"><tspan class="hi">    cfg.LicenseKey = config[</tspan><tspan class="str">"MediatR:Key"</tspan><tspan class="hi">];</tspan></text>
+      <text y="60"><tspan class="txt">    cfg.</tspan><tspan class="fn">RegisterServicesFromAssemblyContaining</tspan><tspan class="txt">&lt;</tspan><tspan class="typ">Program</tspan><tspan class="txt">&gt;();</tspan></text>
+      <text y="80"><tspan class="hi">    cfg.AddOpenBehavior(</tspan><tspan class="kw">typeof</tspan><tspan class="hi">(</tspan><tspan class="typ">MyValidation</tspan><tspan class="hi">&lt;,&gt;));</tspan></text>
+      <text y="100"><tspan class="hi">    cfg.AddOpenBehavior(</tspan><tspan class="kw">typeof</tspan><tspan class="hi">(</tspan><tspan class="typ">MyLogging</tspan><tspan class="hi">&lt;,&gt;));</tspan></text>
+      <text y="120"><tspan class="hi">    cfg.AddOpenBehavior(</tspan><tspan class="kw">typeof</tspan><tspan class="hi">(</tspan><tspan class="typ">MyPollyRetry</tspan><tspan class="hi">&lt;,&gt;));</tspan></text>
+      <text y="140"><tspan class="txt">});</tspan></text>
+      <text y="160"><tspan class="com">// ↑ three behaviors you write, test and keep in sync</tspan></text>
+
+      <text y="195"><tspan class="txt">app.</tspan><tspan class="fn">MapPost</tspan><tspan class="txt">(</tspan><tspan class="str">"/products"</tspan><tspan class="txt">, </tspan><tspan class="kw">async</tspan><tspan class="txt"> (</tspan><tspan class="typ">CreateProduct</tspan><tspan class="txt"> c, </tspan><tspan class="typ">ISender</tspan><tspan class="txt"> s) =&gt;</tspan></text>
+      <text y="215"><tspan class="txt">{</tspan></text>
+      <text y="235"><tspan class="kw">    try</tspan></text>
+      <text y="255"><tspan class="txt">    {</tspan></text>
+      <text y="275"><tspan class="ok">        return Results.Ok(await s.Send(c));</tspan></text>
+      <text y="292"><tspan class="com">        // ↑ the only line that matters</tspan></text>
+      <text y="312"><tspan class="txt">    }</tspan></text>
+      <text y="332"><tspan class="hi">    catch (</tspan><tspan class="typ">ValidationException</tspan><tspan class="hi"> e)</tspan></text>
+      <text y="352"><tspan class="hi">    { return Results.BadRequest(e.Errors); }</tspan></text>
+      <text y="372"><tspan class="hi">    catch (</tspan><tspan class="typ">NotFoundException</tspan><tspan class="hi"> e)</tspan></text>
+      <text y="392"><tspan class="hi">    { return Results.NotFound(e.Message); }</tspan></text>
+      <text y="412"><tspan class="hi">    catch (</tspan><tspan class="typ">Exception</tspan><tspan class="hi">)</tspan></text>
+      <text y="432"><tspan class="hi">    { return Results.Problem(); }</tspan></text>
+      <text y="452"><tspan class="txt">});</tspan></text>
+    </g>
+  </g>
+
+  <!-- ===== ARROW ===== -->
+  <g transform="translate(600,315)">
+    <circle r="20" fill="#7C5CE6"/>
+    <text y="7" text-anchor="middle" fill="#ffffff" font-size="22" font-weight="700">→</text>
+  </g>
+
+  <!-- ===== AFTER PANEL ===== -->
+  <g transform="translate(624,30)" filter="url(#shadow)">
+    <rect width="552" height="570" rx="12" fill="url(#bgAfter)"/>
+    <rect width="552" height="36" rx="12" fill="#0e0b1c"/>
+    <rect y="24" width="552" height="12" fill="#0e0b1c"/>
+    <circle class="dot-r" cx="20" cy="18" r="6"/>
+    <circle class="dot-y" cx="40" cy="18" r="6"/>
+    <circle class="dot-g" cx="60" cy="18" r="6"/>
+    <text x="276" y="24" text-anchor="middle" class="title">✅ After: with DotCourier</text>
+    <text x="276" y="58" text-anchor="middle" class="sub">MIT · behaviors built in · errors become status codes</text>
+
+    <g transform="translate(20,112)">
+      <text y="0"><tspan class="txt">builder.Services.</tspan><tspan class="fn">AddCourier</tspan><tspan class="txt">(cfg =&gt; cfg</tspan></text>
+      <text y="20"><tspan class="txt">    .</tspan><tspan class="fn">RegisterServicesFromAssemblyContaining</tspan><tspan class="txt">&lt;</tspan><tspan class="typ">Program</tspan><tspan class="txt">&gt;()</tspan></text>
+      <text y="40"><tspan class="txt">    .</tspan><tspan class="fn">AddResilience</tspan><tspan class="txt">(o =&gt; o.Retry.Enabled = </tspan><tspan class="kw">true</tspan><tspan class="txt">));</tspan></text>
+
+      <text y="85"><tspan class="txt">app.</tspan><tspan class="fn">MapPost</tspan><tspan class="txt">(</tspan><tspan class="str">"/products"</tspan><tspan class="txt">, (</tspan><tspan class="typ">CreateProduct</tspan><tspan class="txt"> c, </tspan><tspan class="typ">ICourier</tspan><tspan class="txt"> courier) =&gt;</tspan></text>
+      <text y="105"><tspan class="ok">    courier.Dispatch(c).ToResult());</tspan></text>
+    </g>
+
+    <g transform="translate(24,320)">
+      <text y="0" class="win">✓ validation   →  DataAnnotations + IRequestValidator&lt;T&gt;</text>
+      <text y="26" class="win">✓ logging      →  built in, never logs request data</text>
+      <text y="52" class="win">✓ tracing      →  ActivitySource + Meter (OpenTelemetry)</text>
+      <text y="78" class="win">✓ resilience   →  DotCourier.Resilience (Polly v8)</text>
+      <text y="104" class="win">✓ errors       →  Response&lt;T&gt; 400/404/429/503, no leaks</text>
+      <text y="130" class="win">✓ migration    →  same IRequest / IRequestHandler API</text>
+      <text y="156" class="win">✓ license      →  MIT, no key, no revenue tiers</text>
+    </g>
+  </g>
+</svg>

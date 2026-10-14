@@ -1,32 +1,106 @@
-# DotCourier
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Valossa515/dotcourier/main/assets/dotcourier-logo.png" alt="DotCourier logo" width="600"/>
+</p>
 
-**CQRS + Mediator for .NET, batteries included. MIT licensed, forever.**
+<h1 align="center">DotCourier</h1>
 
-DotCourier is the .NET sibling of [Spring Courier](https://github.com/Valossa515/spring-courier).
-It speaks the MediatR API (`IRequest<T>`, `IRequestHandler<,>`, `INotification`,
-`IPipelineBehavior<,>`, `IMediator`), so migrating is mostly swapping a `using`. Unlike a bare
-mediator, it also ships the cross-cutting pieces every team ends up writing by hand:
+<p align="center">
+  🚀 <strong>CQRS + Mediator for .NET, batteries included.</strong><br/>
+  A MediatR-compatible API with the pipeline behaviors you would otherwise write yourself. MIT licensed.
+</p>
 
-| Built in | What it does |
+<p align="center">
+  <a href="https://www.nuget.org/packages/DotCourier"><img src="https://img.shields.io/nuget/v/DotCourier?logo=nuget&label=nuget&color=512BD4" alt="NuGet"/></a>
+  <a href="https://www.nuget.org/packages/DotCourier"><img src="https://img.shields.io/nuget/dt/DotCourier?logo=nuget&label=downloads&color=512BD4" alt="NuGet downloads"/></a>
+  <a href="https://dotnet.microsoft.com/"><img src="https://img.shields.io/badge/.NET-8%20%7C%2010-512BD4?logo=dotnet" alt=".NET 8 | 10"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"/></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Valossa515/dotcourier/actions/workflows/ci.yml"><img src="https://github.com/Valossa515/dotcourier/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/Valossa515/dotcourier/stargazers"><img src="https://img.shields.io/github/stars/Valossa515/dotcourier?style=flat&logo=github" alt="GitHub stars"/></a>
+  <a href="https://github.com/Valossa515/dotcourier/commits/main"><img src="https://img.shields.io/github/last-commit/Valossa515/dotcourier" alt="Last commit"/></a>
+</p>
+
+---
+
+> 🌐 **Language / Idioma:** 🇺🇸 **English** (current) | 🇧🇷 [Português](README.pt-BR.md)
+
+## 🧠 Why DotCourier?
+
+MediatR 13+ is commercially licensed. DotCourier is a **free, MIT-licensed** alternative that
+speaks the same API, so moving over is mostly a `using` swap. It also ships the parts every team
+ends up hand-rolling around MediatR.
+
+- 🔁 **Drop-in for MediatR.** Same contract names: `IRequest<T>`, `IRequestHandler<,>`,
+  `INotification`, `IPipelineBehavior<,>`, `IMediator`, `ISender`, `IPublisher`, and
+  `AddCourier` takes the same configuration methods as `AddMediatR`.
+- 🛡️ **Production-grade out of the box.** Logging, validation, OpenTelemetry traces and metrics,
+  and timeouts are built in. Retry, circuit breaker, rate limiting and bulkhead come from one extra package.
+- 🧾 **Errors become responses, not leaks.** `Dispatch` returns a `Response<T>` with a status
+  code. Exceptions are mapped without ever putting a stack trace or connection string in an HTTP body.
+- ☕ **Sibling of [Spring Courier](https://github.com/Valossa515/spring-courier).** Same design on
+  the JVM, so mixed Java/.NET shops get one mental model.
+
+## 🔄 Before / After
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Valossa515/dotcourier/main/assets/before-after.svg" alt="Before and after using DotCourier" width="100%"/>
+</p>
+
+<details>
+<summary>See the same comparison as plain code</summary>
+
+**Before**: MediatR, a license key, behaviors you maintain, and a `try/catch` per endpoint:
+
+```csharp
+builder.Services.AddMediatR(cfg =>
+{
+    cfg.LicenseKey = config["MediatR:Key"];
+    cfg.RegisterServicesFromAssemblyContaining<Program>();
+    cfg.AddOpenBehavior(typeof(MyValidation<,>));   // hand-written
+    cfg.AddOpenBehavior(typeof(MyLogging<,>));      // hand-written
+    cfg.AddOpenBehavior(typeof(MyPollyRetry<,>));   // hand-written
+});
+
+app.MapPost("/products", async (CreateProduct c, ISender s) =>
+{
+    try { return Results.Ok(await s.Send(c)); }
+    catch (ValidationException e) { return Results.BadRequest(e.Errors); }
+    catch (NotFoundException e) { return Results.NotFound(e.Message); }
+    catch (Exception) { return Results.Problem(); }
+});
+```
+
+**After**:
+
+```csharp
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddResilience(o => o.Retry.Enabled = true));
+
+app.MapPost("/products", (CreateProduct c, ICourier courier) =>
+    courier.Dispatch(c).ToResult());
+```
+
+</details>
+
+## 📦 Packages
+
+| Package | What it adds |
 |---|---|
-| `Response<T>` + `Dispatch` | Never-throwing dispatch that turns exceptions into status-coded responses without leaking internals |
-| Logging | Start / duration / outcome per request, without logging request contents |
-| Validation | DataAnnotations (including on positional record parameters) + your own `IRequestValidator<T>` |
-| Telemetry | `ActivitySource` traces and `Meter` metrics, ready for OpenTelemetry |
-| Timeouts | `[HandlerTimeout(ms)]` cancels the handler and returns 504 |
-| Ordering | Behaviors are placed by an explicit `order`, not by registration accident |
-| Pre/post processors, exception handlers | MediatR-compatible |
+| [`DotCourier`](https://www.nuget.org/packages/DotCourier) | Dispatcher, pipeline, notifications, `Response<T>`, logging, validation, telemetry, timeouts |
+| [`DotCourier.AspNetCore`](https://www.nuget.org/packages/DotCourier.AspNetCore) | `Response<T>.ToResult()` (Minimal APIs) and `ToActionResult()` (MVC) |
+| [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter and bulkhead on Polly v8 |
 
-Targets **net8.0** and **net10.0**.
+All packages target **net8.0** and **net10.0**.
 
-## Install
+## ⚡ Quick start
 
 ```bash
 dotnet add package DotCourier
-dotnet add package DotCourier.AspNetCore   # optional: Response<T> -> IResult / IActionResult
+dotnet add package DotCourier.AspNetCore
 ```
-
-## Quick start
 
 ```csharp
 builder.Services.AddCourier(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
@@ -72,7 +146,7 @@ An invalid `CreateProduct` never reaches the handler and comes back as:
   "errorDetails": [ { "field": "Price", "message": "The field Price must be between 0.01 and 10000." } ] }
 ```
 
-## `Send` vs `Dispatch`
+## 📨 `Send` vs `Dispatch`
 
 | | Returns | On failure |
 |---|---|---|
@@ -80,9 +154,8 @@ An invalid `CreateProduct` never reaches the handler and comes back as:
 | `Dispatch(request)` | `Response<TResponse>` | returns an error response; only rethrows cancellation you requested |
 
 `Dispatch` only puts the message of a `CourierException` (and its subclasses) in the response.
-Any other exception becomes `"An internal error occurred"` with status 500, so a stack trace or
-connection string never ends up in an HTTP body. Throw your own business errors as
-`CourierException` subclasses to surface them:
+Anything else becomes `"An internal error occurred"` with status 500. Throw your own business
+errors as `CourierException` subclasses to surface them:
 
 ```csharp
 public sealed class OutOfStockException(string sku) : CourierException($"SKU {sku} is out of stock", 409);
@@ -90,7 +163,7 @@ public sealed class OutOfStockException(string sku) : CourierException($"SKU {sk
 
 When a handler already returns `Response<T>`, `Dispatch` hands it back as-is instead of wrapping it twice.
 
-## Pipeline
+## 🧩 Pipeline
 
 ```csharp
 builder.Services.AddCourier(cfg =>
@@ -102,29 +175,29 @@ builder.Services.AddCourier(cfg =>
 });
 ```
 
-Lower order = outermost. Built-in positions (`BehaviorOrder`):
+Behaviors are placed by an explicit **order**, not by registration accident. Lower = outermost:
 
-| Order | Behavior |
-|---|---|
-| -2000 | exception handlers (`IRequestExceptionHandler<,,>`) |
-| -1900 / -1800 | pre / post processors |
-| -1000 | logging |
-| -990 | telemetry |
-| -900 | validation |
-| -700 | timeout |
-| 0 | your behaviors (default) |
-
-The gaps leave room for idempotency, caching, rate limiting, circuit breaker, retry, bulkhead and
-transactions. They will slot in at the positions Spring Courier uses, so retry stays outside the
-transaction and the circuit breaker stays outside retry.
+| Order | Behavior | Package |
+|------:|---|---|
+| -2000 | exception handlers (`IRequestExceptionHandler<,,>`) | core |
+| -1900 / -1800 | pre / post processors | core |
+| -1000 | logging | core |
+| -990 | telemetry | core |
+| -900 | validation | core |
+| -870 | rate limiter | Resilience |
+| -860 | circuit breaker | Resilience |
+| -850 | retry | Resilience |
+| -840 | bulkhead | Resilience |
+| -700 | timeout | core |
+| 0 | your behaviors (default) | |
 
 Turn built-ins off with `cfg.EnableLogging`, `EnableTelemetry`, `EnableValidation`,
 `UseDataAnnotations` or `EnableTimeouts`.
 
-## Validation
+## ✅ Validation
 
-DataAnnotations work as written on positional records. The standard `Validator` misses attributes
-on record parameters, and DotCourier does not:
+DataAnnotations work as written on positional records. The standard `Validator` misses
+attributes on record parameters; DotCourier reads them:
 
 ```csharp
 public sealed record Register([Required] string Name, [EmailAddress] string Email) : ICommand;
@@ -142,7 +215,53 @@ public sealed class RegisterValidator(AppDbContext db) : IRequestValidator<Regis
 }
 ```
 
-## Timeouts
+## 🛡️ Resilience
+
+```bash
+dotnet add package DotCourier.Resilience
+```
+
+```csharp
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddResilience(o =>
+    {
+        o.Retry.Enabled = true;                         // opt-in
+        o.ForRequest<GenerateReport>(r =>
+        {
+            r.Bulkhead.Enabled = true;
+            r.Bulkhead.MaxConcurrency = 2;
+        });
+        o.ForRequest<PlaceOrder>(r => r.Retry.Enabled = false); // not idempotent
+    }));
+```
+
+Each request type gets its **own** circuit, rate-limit window and bulkhead pool.
+
+| Strategy | Default | On rejection |
+|---|---|---|
+| Circuit breaker | **on** | `CircuitOpenException` → **503** |
+| Retry | off | (last failure propagates) |
+| Rate limiter | off | `RateLimitExceededException` → **429** |
+| Bulkhead | off | `BulkheadRejectedException` → **503** |
+
+**Why only the breaker is on by default:** it only acts once something is already failing, so it
+cannot throttle a healthy system. Retry can apply a non-idempotent command twice, and rate limiter
+and bulkhead impose hard ceilings; all three are deliberate choices.
+
+The placement in the pipeline is deliberate too, and pinned by tests:
+
+- **Breaker outside retry.** An open circuit is rejected *once* instead of being retried N times.
+  Retrying into a failing dependency amplifies the outage.
+- **Bulkhead inside retry.** A slot is taken per attempt and released during the backoff delay,
+  so sleeping retries do not starve the pool.
+- **Rate limiter after validation.** Invalid requests do not consume quota.
+
+Client errors (`CourierException` with a status below 500: validation, not found, conflict) are
+neither retried nor counted by the breaker. Override with `o.ShouldHandle`. Invalid settings throw
+at startup, not on the first request.
+
+## ⏱️ Timeouts
 
 ```csharp
 [HandlerTimeout(2_000)]
@@ -150,10 +269,11 @@ public sealed record GenerateReport(int Year) : IQuery<Report>;
 ```
 
 The handler's `CancellationToken` is cancelled after 2 s, and the caller gets a
-`RequestTimeoutException` (504) on time even if the handler ignores the token. Unlike Spring
-Courier's `@Timeout`, this runs on the same async flow, so it composes with transactions and ambient context.
+`RequestTimeoutException` (504) on time even if the handler ignores the token. It runs on the
+same async flow, so it composes with transactions and ambient context. With retry enabled, each
+attempt gets its own timeout.
 
-## Notifications
+## 📣 Notifications
 
 ```csharp
 await courier.Publish(new ProductCreated(id), ct);
@@ -167,7 +287,7 @@ await courier.Publish(new ProductCreated(id), ct);
 
 > MediatR's default publisher throws on the first failure. If you depend on that, pick `StopOnFirstError`.
 
-## Telemetry
+## 📈 Telemetry
 
 ```csharp
 builder.Services.AddOpenTelemetry()
@@ -175,34 +295,60 @@ builder.Services.AddOpenTelemetry()
     .WithMetrics(m => m.AddMeter(CourierDiagnostics.SourceName));
 ```
 
-Each request becomes a `courier {RequestType}` activity. Metrics `courier.requests` (counter) and
-`courier.request.duration` (histogram, seconds) are tagged with `courier.request.type`,
-`courier.outcome` and `error.type`.
+| Signal | Name | Tags |
+|---|---|---|
+| Activity | `courier {RequestType}` | `courier.request.type`, `error.type` |
+| Counter | `courier.requests` | `courier.request.type`, `courier.outcome`, `error.type` |
+| Histogram (s) | `courier.request.duration` | same as above |
+| Counter | `courier.resilience.rejected` | `courier.request.type`, `courier.resilience.strategy` |
+| Counter | `courier.retry.attempts` | `courier.request.type` |
 
-## Migrating from MediatR
+## 🔀 Migrating from MediatR
 
-1. Replace the package `MediatR` with `DotCourier`, and `using MediatR;` with `using DotCourier;`.
-2. Replace `services.AddMediatR(cfg => ...)` with `services.AddCourier(cfg => ...)`. `RegisterServicesFromAssembly*`,
-   `AddBehavior` and `AddOpenBehavior` keep their names.
+1. Replace the `MediatR` package with `DotCourier`, and `using MediatR;` with `using DotCourier;`.
+2. Replace `services.AddMediatR(cfg => ...)` with `services.AddCourier(cfg => ...)`.
+   `RegisterServicesFromAssembly*`, `AddBehavior` and `AddOpenBehavior` keep their names.
 3. `IMediator`, `ISender` and `IPublisher` still resolve. Inject `ICourier` where you want `Dispatch`.
 
 Differences to watch for:
+
 - `IRequest` is `IRequest<Unit>`, as in MediatR 11, so `Send` on a void request returns `Task<Unit>`.
 - Notification failures are logged rather than thrown by default (see above).
 - Logging, telemetry, validation and timeouts are on by default.
 - Streaming requests (`IStreamRequest`) are not supported yet.
 
-## Roadmap
+### At a glance
 
-Each Spring Courier module will get a .NET counterpart:
+| | MediatR 13+ | DotCourier |
+|---|---|---|
+| License | commercial (license key) | **MIT** |
+| Request / handler / behavior API | ✅ | ✅ same names |
+| Built-in validation, logging, telemetry | ❌ write your own | ✅ |
+| Retry / circuit breaker / rate limit / bulkhead | ❌ | ✅ `DotCourier.Resilience` |
+| Exceptions → status-coded `Response<T>` | ❌ | ✅ `Dispatch` |
+| Explicit behavior ordering | registration order | ✅ `BehaviorOrder` |
+| Streaming requests | ✅ | 🔜 |
 
-- **Resilience**: retry, circuit breaker, rate limiter and bulkhead on Polly v8
-- **Caching / idempotency**: `[Cacheable]` and `[Idempotent]` over `HybridCache` / `IDistributedCache` (Redis included)
-- **Transactions**: EF Core / `TransactionScope` behavior
-- **Outbox**: transactional outbox with EF Core and a background dispatcher
-- **Messaging**: outbox delivery to Kafka
-- Source generator for reflection-free, AOT-friendly dispatch
+## 🗺️ Roadmap
 
-## License
+Each [Spring Courier](https://github.com/Valossa515/spring-courier) module gets a .NET counterpart:
 
-MIT
+- [x] Core: dispatcher, pipeline, validation, telemetry, timeouts
+- [x] ASP.NET Core integration
+- [x] Resilience: retry, circuit breaker, rate limiter, bulkhead (Polly v8)
+- [ ] Caching and idempotency: `HybridCache` / `IDistributedCache` (Redis included)
+- [ ] Transactions: EF Core / `TransactionScope` behavior
+- [ ] Transactional outbox with EF Core
+- [ ] Outbox delivery to Kafka
+- [ ] Streaming requests
+- [ ] Source generator for reflection-free, AOT-friendly dispatch
+
+## 🤝 Contributing
+
+Contributions are welcome. Read the [contributing guide](CONTRIBUTING.md) and the
+[code of conduct](CODE_OF_CONDUCT.md). To report a vulnerability, follow the
+[security policy](SECURITY.md); please don't open a public issue.
+
+## 📄 License
+
+[MIT](LICENSE). Free for commercial use, forever.
