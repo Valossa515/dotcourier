@@ -131,8 +131,9 @@ public partial class Courier : ICourier
         {
             LogCourierFailure(request.GetType().Name, exception.GetType().Name, exception.Message);
         }
-        else
+        else if (!ExceptionLogMarker.IsMarked(exception))
         {
+            // Only when the logging behavior did not already record it (e.g. it is disabled).
             LogUnexpectedFailure(exception, request.GetType().Name);
         }
 
