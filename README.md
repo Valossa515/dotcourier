@@ -278,6 +278,41 @@ public sealed class SignupValidator : AbstractValidator<Signup>
   also becomes a 400. Without this package it is an unexpected exception and `Dispatch` answers 500.
   The translation happens right around the handler, so retry never repeats an invalid request.
 
+## 🔌 Your own handler interface
+
+Already have an `IHandler<TInput, TOutput>` with an `Execute` method (often paired with a
+`HandlerBase` doing validation and `try/catch`)? Keep it. Make it inherit from
+`IRequestHandler` once, with a default interface method that forwards `Handle` to `Execute`,
+and every existing handler is discovered and runs through the pipeline unchanged:
+
+```csharp
+public interface IHandler<TInput, TOutput> : IRequestHandler<TInput, Response<TOutput>>
+    where TInput : IRequest<Response<TOutput>>
+{
+    Task<Response<TOutput>> Execute(TInput request, CancellationToken ct);
+
+    // The one-time bridge to DotCourier. Handlers never see it.
+    Task<Response<TOutput>> IRequestHandler<TInput, Response<TOutput>>.Handle(TInput request, CancellationToken ct)
+        => Execute(request, ct);
+}
+
+public sealed record GetOrder(int Id) : IQuery<Response<OrderDto>>;
+
+public sealed class GetOrderHandler(AppDbContext db) : IHandler<GetOrder, OrderDto>
+{
+    public async Task<Response<OrderDto>> Execute(GetOrder request, CancellationToken ct) =>
+        await db.Orders.FindAsync([request.Id], ct) is { } order
+            ? order.ToDto()
+            : Response.NotFound($"Order {request.Id} not found", code: "ORD-404");
+}
+```
+
+The `HandlerBase` itself can go: validation, error mapping and logging come from the pipeline,
+and its `NotFound`/`Created`/... helpers are `Response.NotFound(...)` and friends.
+
+> Spring Courier finds such handlers by method name (`handle`/`execute`) at runtime. In .NET the
+> bridge is checked by the compiler and involves no reflection per call.
+
 ## 🧬 Generic requests and handlers
 
 Everything Spring Courier supports works, and DotCourier goes further:

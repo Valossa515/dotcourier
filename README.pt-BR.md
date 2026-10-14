@@ -280,6 +280,42 @@ public sealed class SignupValidator : AbstractValidator<Signup>
   `Dispatch` responde 500. A conversão acontece colada ao handler, então o retry nunca repete um
   request inválido.
 
+## 🔌 A sua própria interface de handler
+
+Já tem um `IHandler<TInput, TOutput>` com um método `Execute` (muitas vezes junto de um
+`HandlerBase` que faz validação e `try/catch`)? Mantenha. Faça a interface herdar de
+`IRequestHandler` uma vez, com um método padrão (default interface method) que encaminha o
+`Handle` para o `Execute`, e todos os handlers existentes são descobertos e passam pelo pipeline
+sem mudar nada:
+
+```csharp
+public interface IHandler<TInput, TOutput> : IRequestHandler<TInput, Response<TOutput>>
+    where TInput : IRequest<Response<TOutput>>
+{
+    Task<Response<TOutput>> Execute(TInput request, CancellationToken ct);
+
+    // A ponte com o DotCourier, escrita uma vez. Os handlers nunca a veem.
+    Task<Response<TOutput>> IRequestHandler<TInput, Response<TOutput>>.Handle(TInput request, CancellationToken ct)
+        => Execute(request, ct);
+}
+
+public sealed record GetOrder(int Id) : IQuery<Response<OrderDto>>;
+
+public sealed class GetOrderHandler(AppDbContext db) : IHandler<GetOrder, OrderDto>
+{
+    public async Task<Response<OrderDto>> Execute(GetOrder request, CancellationToken ct) =>
+        await db.Orders.FindAsync([request.Id], ct) is { } order
+            ? order.ToDto()
+            : Response.NotFound($"Order {request.Id} not found", code: "ORD-404");
+}
+```
+
+O `HandlerBase` pode sair: validação, mapeamento de erros e log vêm do pipeline, e os atalhos
+`NotFound`/`Created`/... dele viram `Response.NotFound(...)` e companhia.
+
+> O Spring Courier encontra esses handlers pelo nome do método (`handle`/`execute`) em tempo de
+> execução. No .NET a ponte é verificada pelo compilador e não usa reflection a cada chamada.
+
 ## 🧬 Requests e handlers genéricos
 
 Tudo o que o Spring Courier suporta funciona, e o DotCourier vai além:

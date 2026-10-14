@@ -83,6 +83,10 @@ dotcourier/
   (`CreateHandler<T> : IRequestHandler<Create<T>, T>`) go to `GenericRequestHandlerRegistry`, which
   unifies the handler's interface with the closed service on the first miss, checks constraints via
   `MakeGenericType`, caches an `ActivatorUtilities` factory, and throws if two open handlers fit.
+- **Own handler interfaces:** apps keep their own `IHandler<TIn, TOut>.Execute` by making the
+  interface inherit `IRequestHandler<,>` with a default interface method forwarding `Handle` to
+  `Execute`; scanning sees the inherited closed interface. Pinned by `OwnHandlerInterfaceTests`
+  and documented in both READMEs. (Spring Courier does this by method-name convention instead.)
 - **Names:** always use `CourierDiagnostics.GetRequestName(type)` for request types in logs,
   metrics and messages (`Create<Product>`, not ``Create`1``).
 - **Error codes:** `Response<T>.ErrorCode` (JSON `errorCode`, omitted when null) comes from the
