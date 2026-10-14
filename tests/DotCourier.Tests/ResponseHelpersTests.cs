@@ -88,6 +88,18 @@ public class ResponseHelpersTests
     }
 
     [Fact]
+    public void Unit_serializes_as_null_and_round_trips()
+    {
+        Response<Unit> ok = Response.Success();
+        Response<Unit> missing = Response.NotFound("gone");
+
+        var okJson = JsonSerializer.Serialize(ok);
+        Assert.Contains("\"data\":null", okJson);
+        Assert.Contains("\"data\":null", JsonSerializer.Serialize(missing));
+        Assert.Equal(ok, JsonSerializer.Deserialize<Response<Unit>>(okJson));
+    }
+
+    [Fact]
     public void NoContent_becomes_a_bodiless_204_result()
     {
         Response<string> response = Response.NoContent();
