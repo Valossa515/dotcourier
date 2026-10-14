@@ -84,8 +84,10 @@ internal sealed partial class CourierResiliencePipelines
                     ShouldHandle = args => ValueTask.FromResult(args.Outcome.Exception is { } ex && _options.ShouldHandle(ex)),
                     OnRetry = args =>
                     {
-                        LogRetrying(requestType.Name, args.AttemptNumber + 1, retry.MaxAttempts, args.RetryDelay.TotalMilliseconds,
-                            args.Outcome.Exception?.GetType().Name);
+                        // AttemptNumber is the zero-based index of the retry, so the attempt about to
+                        // run (counting the first call) is AttemptNumber + 2.
+                        LogRetrying(requestType.Name, args.Outcome.Exception?.GetType().Name, args.AttemptNumber + 2, retry.MaxAttempts,
+                            args.RetryDelay.TotalMilliseconds);
                         RetryAttempts.Add(1, new KeyValuePair<string, object?>("courier.request.type", requestType.Name));
                         return default;
                     },
@@ -135,8 +137,8 @@ internal sealed partial class CourierResiliencePipelines
         return builder.Build();
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "[Courier] {RequestType} failed with {ExceptionType}; retry {Attempt}/{MaxAttempts} in {DelayMs:0}ms")]
-    private partial void LogRetrying(string requestType, int attempt, int maxAttempts, double delayMs, string? exceptionType);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "[Courier] {RequestType} failed with {ExceptionType}; attempt {NextAttempt}/{MaxAttempts} in {DelayMs:0}ms")]
+    private partial void LogRetrying(string requestType, string? exceptionType, int nextAttempt, int maxAttempts, double delayMs);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "[Courier] Circuit opened for {RequestType} for {BreakSeconds:0}s")]
     private partial void LogCircuitOpened(string requestType, double breakSeconds);

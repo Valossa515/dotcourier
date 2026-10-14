@@ -1,8 +1,36 @@
 using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace DotCourier.Tests;
+
+public sealed record LogEntry(string Category, LogLevel Level, string Message, Exception? Exception);
+
+/// <summary>Collects every log entry so tests can assert on what was logged.</summary>
+public sealed class CapturingLoggerProvider : ILoggerProvider
+{
+    private readonly ConcurrentQueue<LogEntry> _entries = new();
+
+    public LogEntry[] Entries => _entries.ToArray();
+
+    public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, _entries);
+
+    public void Dispose()
+    {
+    }
+
+    private sealed class CapturingLogger(string category, ConcurrentQueue<LogEntry> entries) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            entries.Enqueue(new LogEntry(category, logLevel, formatter(state, exception), exception));
+    }
+}
 
 public sealed class CallLog
 {
@@ -15,10 +43,16 @@ public sealed class CallLog
 
 internal static class TestHost
 {
-    public static (ServiceProvider Services, CallLog Log) Build(Action<CourierConfiguration>? configure = null)
+    public static (ServiceProvider Services, CallLog Log) Build(Action<CourierConfiguration>? configure = null, CapturingLoggerProvider? logs = null)
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging =>
+        {
+            if (logs is not null)
+            {
+                logging.SetMinimumLevel(LogLevel.Trace).AddProvider(logs);
+            }
+        });
         var log = new CallLog();
         services.AddSingleton(log);
         services.AddCourier(cfg =>

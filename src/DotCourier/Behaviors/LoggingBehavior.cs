@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DotCourier.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -45,9 +46,16 @@ public sealed partial class LoggingBehavior<TRequest, TResponse> : IPipelineBeha
             LogFailedResponse(RequestName, Stopwatch.GetElapsedTime(start).TotalMilliseconds, ex.StatusCode, ex.Message);
             throw;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            LogCancelled(RequestName, Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            throw;
+        }
         catch (Exception ex)
         {
-            LogThrew(RequestName, ex.GetType().Name, Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            // The one error entry with the stack trace; Dispatch sees the mark and does not repeat it.
+            LogThrew(ex, RequestName, ex.GetType().Name, Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            ExceptionLogMarker.Mark(ex);
             throw;
         }
     }
@@ -62,5 +70,8 @@ public sealed partial class LoggingBehavior<TRequest, TResponse> : IPipelineBeha
     private partial void LogFailedResponse(string requestType, double elapsedMs, int statusCode, string? error);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "[Courier] <-- {RequestType} threw {ExceptionType} after {ElapsedMs:0.0}ms")]
-    private partial void LogThrew(string requestType, string exceptionType, double elapsedMs);
+    private partial void LogThrew(Exception exception, string requestType, string exceptionType, double elapsedMs);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "[Courier] <-- {RequestType} cancelled by the caller after {ElapsedMs:0.0}ms")]
+    private partial void LogCancelled(string requestType, double elapsedMs);
 }
