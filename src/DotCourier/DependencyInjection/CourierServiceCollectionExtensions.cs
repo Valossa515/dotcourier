@@ -50,6 +50,11 @@ public static class CourierServiceCollectionExtensions
             RegisterAssembly(services, assembly, configuration.Lifetime);
         }
 
+        foreach (var register in configuration.ServiceRegistrations)
+        {
+            register(services);
+        }
+
         RegisterBehaviors(services, configuration);
         return services;
     }

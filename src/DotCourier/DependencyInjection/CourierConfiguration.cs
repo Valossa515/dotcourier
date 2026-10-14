@@ -33,6 +33,20 @@ public sealed class CourierConfiguration
 
     internal IReadOnlyList<BehaviorRegistration> Behaviors => _behaviors;
 
+    internal List<Action<IServiceCollection>> ServiceRegistrations { get; } = [];
+
+    /// <summary>
+    /// Registers additional services when <c>AddCourier</c> runs. Meant for extension packages
+    /// (e.g. <c>cfg.AddResilience()</c>) that need services of their own next to behaviors added
+    /// with <see cref="AddOpenBehavior"/>, so everything lands in one ordered registration.
+    /// </summary>
+    public CourierConfiguration ConfigureServices(Action<IServiceCollection> register)
+    {
+        ArgumentNullException.ThrowIfNull(register);
+        ServiceRegistrations.Add(register);
+        return this;
+    }
+
     /// <summary>Scans <paramref name="assembly"/> for handlers, processors, exception handlers and validators.</summary>
     public CourierConfiguration RegisterServicesFromAssembly(Assembly assembly)
     {
