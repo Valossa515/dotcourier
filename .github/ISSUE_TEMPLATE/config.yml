@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/Valossa515/dotcourier/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: ☕ Looking for the Java version?
+    url: https://github.com/Valossa515/spring-courier
+    about: Spring Courier is the Spring Boot sibling of DotCourier.
