@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DotCourier.AspNetCore/DotCourier.AspNetCore.csproj" />
+    <Project Path="src/DotCourier/DotCourier.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DotCourier.Tests/DotCourier.Tests.csproj" />
+  </Folder>
+</Solution>

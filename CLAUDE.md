@@ -1,0 +1,89 @@
+# CLAUDE.md — DotCourier
+
+## Project Overview
+
+DotCourier is a **.NET library** providing **CQRS + Mediator** with built-in pipeline
+behaviors. It is the .NET sibling of Spring Courier (Java, `../spring-courier`) and was
+started after MediatR moved to a commercial license. Distributed via **NuGet**, MIT licensed.
+
+- **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
+- **Targets:** `net8.0` and `net10.0`
+- **Version:** 0.1.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+
+## Design principles
+
+1. **MediatR-compatible surface.** `IRequest<T>`, `IRequestHandler<,>`, `INotification`,
+   `IPipelineBehavior<,>`, `IRequestPreProcessor<>`, `IRequestPostProcessor<,>`,
+   `IRequestExceptionHandler<,,>`, `IMediator`/`ISender`/`IPublisher` and the
+   `RegisterServicesFromAssembly*`/`AddBehavior`/`AddOpenBehavior` names match MediatR so
+   migration is mostly a `using` swap. Do not rename these.
+2. **Spring Courier semantics where they add value.** `Response<T>`, `Dispatch` (never throws,
+   hides non-`CourierException` messages), notification strategies, `BehaviorOrder` positions
+   and behavior placement rules all mirror the Java library.
+3. **Async + CancellationToken everywhere.** No sync-over-async.
+4. **Core has no third-party dependencies** beyond `Microsoft.Extensions.*.Abstractions`.
+   Integrations (Polly, EF Core, Redis, Kafka) go in separate packages.
+
+## Repository Structure
+
+```
+dotcourier/
+├── Directory.Build.props        # shared props: LangVersion, Nullable, warnings-as-errors, package metadata
+├── Directory.Packages.props     # central package versions
+├── DotCourier.slnx
+├── src/
+│   ├── Directory.Build.props    # multi-targeting, XML docs, symbols, README packing
+│   ├── DotCourier/              # core package
+│   │   ├── Requests.cs Handlers.cs Pipeline.cs ICourier.cs   # public contracts
+│   │   ├── Courier.cs           # dispatcher (Send / Dispatch / Publish)
+│   │   ├── Response.cs          # Response<T>, ResponseError, IResponseStatus
+│   │   ├── Exceptions.cs        # CourierException hierarchy + ValidationError
+│   │   ├── BehaviorOrder.cs     # pipeline positions (mirror of Spring Courier orders)
+│   │   ├── Behaviors/           # Logging, Telemetry, Validation, Timeout, processors, exception handlers
+│   │   ├── Validation/          # IRequestValidator<T>, DataAnnotations evaluator
+│   │   ├── DependencyInjection/ # AddCourier + CourierConfiguration
+│   │   └── Internal/            # per-request-type cached wrappers (no reflection on the hot path)
+│   └── DotCourier.AspNetCore/   # Response<T>.ToResult() / ToActionResult()
+└── tests/DotCourier.Tests/      # xUnit, runs on net8.0 and net10.0
+```
+
+## Key mechanics
+
+- **Pipeline order:** behaviors are registered sorted by `order` (stable), because MS DI
+  returns `IEnumerable<IPipelineBehavior<,>>` in registration order and the first is outermost.
+  Behaviors registered directly in `IServiceCollection` (outside `AddCourier`) bypass sorting.
+- **Dispatch path:** `Courier` caches one `RequestHandlerWrapperImpl<TRequest,TResponse>` per
+  request type in a static `ConcurrentDictionary`; the handler is resolved eagerly so a missing
+  one fails before any behavior runs.
+- **Error mapping (`Response<T>.FromException`):** `ValidationException` → 400 + errors as
+  `ErrorDetails`; other `CourierException` → its message and `StatusCode`; anything else →
+  `"An internal error occurred"` / 500. Keep this leak-proof.
+- **Validation:** DataAnnotations are read from properties *and* matching constructor
+  parameters, so positional records work.
+
+## Build & Test
+
+```bash
+dotnet build
+dotnet test
+dotnet pack -c Release -o artifacts
+```
+
+`TreatWarningsAsErrors` is on and `src/` generates XML docs, so every public member needs a
+`<summary>`.
+
+## Release
+
+1. Create a GitHub Release tagged `vX.Y.Z`.
+2. `publish-nuget.yml` tests, packs with `-p:Version=X.Y.Z` and pushes to NuGet
+   (secret: `NUGET_API_KEY`).
+
+## Roadmap (Spring Courier module → DotCourier package)
+
+| Spring Courier | DotCourier (planned) |
+|---|---|
+| `spring-courier-resilience` | `DotCourier.Resilience` (Polly v8) |
+| `spring-courier-cache-redis` + cache/idempotency | `DotCourier.Caching` (`HybridCache`/`IDistributedCache`) |
+| `TransactionBehavior` | `DotCourier.EntityFrameworkCore` |
+| `spring-courier-outbox` | `DotCourier.Outbox.EntityFrameworkCore` |
+| `spring-courier-messaging` | `DotCourier.Kafka` |

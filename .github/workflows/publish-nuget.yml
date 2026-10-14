@@ -1,0 +1,42 @@
+name: Publish to NuGet
+
+# Publishes every package in the solution. The version comes from the release tag
+# (v1.2.3 -> 1.2.3), so Directory.Build.props does not have to be bumped by hand.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version to publish (e.g. 0.1.0)
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${INPUT_VERSION:-${TAG#v}}"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: dotnet test -c Release
+
+      - name: Pack
+        run: dotnet pack -c Release -o artifacts -p:Version=${{ steps.version.outputs.value }}
+
+      - name: Push
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
