@@ -76,7 +76,8 @@ dotnet pack -c Release -o artifacts
 
 1. Create a GitHub Release tagged `vX.Y.Z`.
 2. `publish-nuget.yml` tests, packs with `-p:Version=X.Y.Z` and pushes to NuGet
-   (secret: `NUGET_API_KEY`).
+   via NuGet Trusted Publishing (OIDC, no stored API key). Needs the repo variable
+   `NUGET_USER` and a trusted publishing policy on nuget.org for `publish-nuget.yml`.
 
 ## Roadmap (Spring Courier module → DotCourier package)
 

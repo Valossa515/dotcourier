@@ -2,6 +2,11 @@ name: Publish to NuGet
 
 # Publishes every package in the solution. The version comes from the release tag
 # (v1.2.3 -> 1.2.3), so Directory.Build.props does not have to be bumped by hand.
+#
+# Authentication uses NuGet Trusted Publishing: GitHub's OIDC token is exchanged for a
+# short-lived API key, so no long-lived key is stored in the repository. Requires a
+# trusted publishing policy on nuget.org for this repo + workflow file, and the
+# repository variable NUGET_USER (the nuget.org profile name, not an email).
 on:
   release:
     types: [published]
@@ -10,6 +15,10 @@ on:
       version:
         description: Package version to publish (e.g. 0.1.0)
         required: true
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -38,5 +47,11 @@ jobs:
       - name: Pack
         run: dotnet pack -c Release -o artifacts -p:Version=${{ steps.version.outputs.value }}
 
+      - name: NuGet login (OIDC)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Push
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
