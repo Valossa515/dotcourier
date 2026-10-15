@@ -6,7 +6,7 @@ namespace DotCourier.FluentValidation;
 /// so <c>Dispatch</c> answers 400 with the failures instead of a generic 500. It runs innermost,
 /// right around the handler, so retry never mistakes an invalid request for a transient failure.
 /// </summary>
-internal sealed class FluentValidationExceptionBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+internal sealed class FluentValidationExceptionBehavior<TRequest, TResponse>(CourierOptions? options = null) : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
@@ -17,7 +17,7 @@ internal sealed class FluentValidationExceptionBehavior<TRequest, TResponse> : I
         }
         catch (global::FluentValidation.ValidationException ex)
         {
-            throw new ValidationException(ex.Errors.Select(FluentValidationErrors.Map));
+            throw new ValidationException(ex.Errors.Select(FluentValidationErrors.Map), options?.Messages, typeof(TRequest));
         }
     }
 }

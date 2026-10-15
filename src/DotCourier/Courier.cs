@@ -138,7 +138,7 @@ public partial class Courier : ICourier
             LogUnexpectedFailure(exception, CourierDiagnostics.GetRequestName(request.GetType()));
         }
 
-        return Response<TResponse>.FromException(exception);
+        return Response<TResponse>.FromException(exception, _options.Messages);
     }
 
     private async Task PublishSequential(NotificationHandlerExecutor[] executors, INotification notification, CancellationToken cancellationToken)

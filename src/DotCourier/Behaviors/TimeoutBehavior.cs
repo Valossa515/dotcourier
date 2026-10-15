@@ -8,7 +8,7 @@ namespace DotCourier.Behaviors;
 /// <see cref="RequestTimeoutException"/> (504) even if the handler ignores the token.
 /// Requests without the attribute pass straight through.
 /// </summary>
-public sealed class TimeoutBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+public sealed class TimeoutBehavior<TRequest, TResponse>(CourierOptions? options = null) : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
     private static readonly TimeSpan? Timeout =
@@ -18,7 +18,7 @@ public sealed class TimeoutBehavior<TRequest, TResponse> : IPipelineBehavior<TRe
     public Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken) =>
         Timeout is { } timeout ? HandleWithTimeout(next, timeout, cancellationToken) : next(cancellationToken);
 
-    private static async Task<TResponse> HandleWithTimeout(RequestHandlerDelegate<TResponse> next, TimeSpan timeout, CancellationToken cancellationToken)
+    private async Task<TResponse> HandleWithTimeout(RequestHandlerDelegate<TResponse> next, TimeSpan timeout, CancellationToken cancellationToken)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(timeout);
@@ -28,7 +28,7 @@ public sealed class TimeoutBehavior<TRequest, TResponse> : IPipelineBehavior<TRe
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            throw new RequestTimeoutException(typeof(TRequest), timeout);
+            throw new RequestTimeoutException(typeof(TRequest), timeout, options?.Messages);
         }
     }
 }

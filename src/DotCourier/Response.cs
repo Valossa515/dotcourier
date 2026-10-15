@@ -108,16 +108,25 @@ public sealed class Response<T> : IResponseStatus, IEquatable<Response<T>>
     /// An error response built from an exception. Only <see cref="CourierException"/>
     /// messages and status codes are propagated; anything else becomes a generic 500.
     /// </summary>
-    public static Response<T> FromException(Exception exception)
+    public static Response<T> FromException(Exception exception) => FromException(exception, null);
+
+    /// <summary>
+    /// An error response built from an exception, using <paramref name="messages"/> for the
+    /// generic message of non-<see cref="CourierException"/> errors.
+    /// </summary>
+    public static Response<T> FromException(Exception exception, CourierMessages? messages)
     {
         ArgumentNullException.ThrowIfNull(exception);
         return exception switch
         {
-            ValidationException v => new(default, v.Message, false, v.StatusCode, true, nameof(ValidationException), v.Errors),
+            ValidationException v => new(default, v.Message, false, v.StatusCode, true, nameof(ValidationException), v.Errors, v.Code),
             CourierException c => new(default, c.Message, false, c.StatusCode, false, c.GetType().Name, null, c.Code),
-            _ => new(default, GenericErrorMessage, false, 500, false, exception.GetType().Name, null),
+            _ => Unexpected(exception, (messages ?? CourierMessages.Default).UnexpectedError),
         };
     }
+
+    private static Response<T> Unexpected(Exception exception, CourierMessage message) =>
+        new(default, message.Render(), false, 500, false, exception.GetType().Name, null, message.Code);
 
     /// <summary>Wraps a value in a successful response.</summary>
     public static implicit operator Response<T>(T value) => Success(value);

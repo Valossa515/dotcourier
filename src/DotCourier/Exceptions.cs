@@ -40,11 +40,18 @@ public class CourierException : Exception
 /// <summary>No <see cref="IRequestHandler{TRequest,TResponse}"/> is registered for a request type.</summary>
 public sealed class HandlerNotFoundException : CourierException
 {
-    /// <summary>Creates the exception for <paramref name="requestType"/>.</summary>
+    /// <summary>Creates the exception for <paramref name="requestType"/> with the default message.</summary>
     public HandlerNotFoundException(Type requestType)
-        : base($"No handler registered for request type '{CourierDiagnostics.GetRequestName(requestType)}'.")
+        : this(requestType, null)
+    {
+    }
+
+    /// <summary>Creates the exception with the <see cref="CourierMessages.HandlerNotFound"/> message.</summary>
+    public HandlerNotFoundException(Type requestType, CourierMessages? messages)
+        : base((messages ?? CourierMessages.Default).HandlerNotFound.Render(requestType))
     {
         RequestType = requestType;
+        Code = (messages ?? CourierMessages.Default).HandlerNotFound.Code;
     }
 
     /// <summary>The request type without a handler.</summary>
@@ -63,7 +70,7 @@ public sealed record ValidationError(
 /// <summary>Request validation failed. Maps to a 400 response carrying <see cref="Errors"/> as details.</summary>
 public sealed class ValidationException : CourierException
 {
-    /// <summary>Creates the exception with a default message.</summary>
+    /// <summary>Creates the exception with the default message.</summary>
     public ValidationException(IEnumerable<ValidationError> errors)
         : this(null, errors)
     {
@@ -71,14 +78,24 @@ public sealed class ValidationException : CourierException
 
     /// <summary>Creates the exception with a custom message.</summary>
     public ValidationException(string? message, IEnumerable<ValidationError> errors)
-        : this(message, (errors ?? []).ToArray())
+        : this(message, (errors ?? []).ToArray(), null, null)
     {
     }
 
-    private ValidationException(string? message, ValidationError[] errors)
-        : base(message ?? $"Validation failed with {errors.Length} error(s)", 400)
+    /// <summary>Creates the exception with the <see cref="CourierMessages.ValidationFailed"/> message.</summary>
+    public ValidationException(IEnumerable<ValidationError> errors, CourierMessages? messages, Type? requestType = null)
+        : this(null, (errors ?? []).ToArray(), messages, requestType)
+    {
+    }
+
+    private ValidationException(string? message, ValidationError[] errors, CourierMessages? messages, Type? requestType)
+        : base(message ?? (messages ?? CourierMessages.Default).ValidationFailed.Render(requestType, errors.Length), 400)
     {
         Errors = errors;
+        if (message is null)
+        {
+            Code = (messages ?? CourierMessages.Default).ValidationFailed.Code;
+        }
     }
 
     /// <summary>The validation failures.</summary>
@@ -88,12 +105,19 @@ public sealed class ValidationException : CourierException
 /// <summary>A request annotated with <see cref="HandlerTimeoutAttribute"/> did not finish in time. Maps to 504.</summary>
 public sealed class RequestTimeoutException : CourierException
 {
-    /// <summary>Creates the exception.</summary>
+    /// <summary>Creates the exception with the default message.</summary>
     public RequestTimeoutException(Type requestType, TimeSpan timeout)
-        : base($"Request '{CourierDiagnostics.GetRequestName(requestType)}' timed out after {timeout.TotalMilliseconds:0} ms", 504)
+        : this(requestType, timeout, null)
+    {
+    }
+
+    /// <summary>Creates the exception with the <see cref="CourierMessages.RequestTimeout"/> message.</summary>
+    public RequestTimeoutException(Type requestType, TimeSpan timeout, CourierMessages? messages)
+        : base((messages ?? CourierMessages.Default).RequestTimeout.Render(requestType, timeout: timeout), 504)
     {
         RequestType = requestType;
         Timeout = timeout;
+        Code = (messages ?? CourierMessages.Default).RequestTimeout.Code;
     }
 
     /// <summary>The request type that timed out.</summary>

@@ -28,7 +28,7 @@ internal sealed class RequestHandlerWrapperImpl<TRequest, TResponse> : RequestHa
         var handler = services.GetService<IRequestHandler<TRequest, TResponse>>()
             ?? (IRequestHandler<TRequest, TResponse>?)services.GetService<GenericRequestHandlerRegistry>()
                 ?.Create(typeof(IRequestHandler<TRequest, TResponse>), services)
-            ?? throw new HandlerNotFoundException(typeof(TRequest));
+            ?? throw new HandlerNotFoundException(typeof(TRequest), services.GetService<CourierOptions>()?.Messages);
 
         RequestHandlerDelegate<TResponse> pipeline = token =>
             handler.Handle(typedRequest, token == default ? cancellationToken : token);

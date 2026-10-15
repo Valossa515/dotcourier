@@ -39,6 +39,7 @@ public static class CourierServiceCollectionExtensions
         {
             NotificationPublishStrategy = configuration.NotificationPublishStrategy,
             UseDataAnnotations = configuration.UseDataAnnotations,
+            Messages = configuration.Messages ?? CourierMessages.Default,
         });
 
         services.TryAdd(new ServiceDescriptor(typeof(ICourier), typeof(Courier), configuration.Lifetime));
