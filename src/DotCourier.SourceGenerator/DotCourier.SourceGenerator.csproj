@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A Roslyn source generator: compiled for netstandard2.0 and shipped as an analyzer, not a library. -->
+  <PropertyGroup>
+    <TargetFrameworks></TargetFrameworks>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageId>DotCourier.SourceGenerator</PackageId>
+    <Description>Compile-time registration for DotCourier: generates the handler registrations and dispatch wrappers of your assembly, so AddCourier does not scan it with reflection at startup.</Description>
+    <RootNamespace>DotCourier.SourceGenerator</RootNamespace>
+    <PackageTags>$(PackageTags);source-generator;roslyn;aot;trimming</PackageTags>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- No lib/ folder on purpose: the assembly goes to analyzers/. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DotCourier.SourceGenerator.Tests" />
+  </ItemGroup>
+
+</Project>

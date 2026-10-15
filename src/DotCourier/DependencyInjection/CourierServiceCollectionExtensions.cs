@@ -1,5 +1,7 @@
 using DotCourier;
+using System.Reflection;
 using DotCourier.Behaviors;
+using DotCourier.Generated;
 using DotCourier.Internal;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -51,7 +53,20 @@ public static class CourierServiceCollectionExtensions
         var openRequestHandlers = new List<Type>();
         foreach (var assembly in configuration.AssembliesToRegister)
         {
-            RegisterAssembly(services, assembly, configuration.Lifetime, openRequestHandlers);
+            // An assembly built with DotCourier.SourceGenerator describes its own handlers: no scanning.
+            var generated = configuration.UseGeneratedRegistrations ? GeneratedCourierRegistry.Find(assembly) : null;
+            if (generated is null)
+            {
+                RegisterAssembly(services, assembly, configuration.Lifetime, openRequestHandlers);
+                continue;
+            }
+
+            generated(new GeneratedRegistrationContext(
+                services,
+                configuration.Lifetime,
+                assembly,
+                scan => RegisterAssembly(services, scan, configuration.Lifetime, openRequestHandlers),
+                open => RegisterOpenGeneric(services, open.GetTypeInfo(), configuration.Lifetime, openRequestHandlers)));
         }
 
         services.TryAddSingleton(new GenericRequestHandlerRegistry(openRequestHandlers.Distinct().ToArray()));
@@ -65,7 +80,7 @@ public static class CourierServiceCollectionExtensions
         return services;
     }
 
-    private static void RegisterAssembly(IServiceCollection services, System.Reflection.Assembly assembly, ServiceLifetime lifetime, List<Type> openRequestHandlers)
+    private static void RegisterAssembly(IServiceCollection services, Assembly assembly, ServiceLifetime lifetime, List<Type> openRequestHandlers)
     {
         foreach (var type in assembly.DefinedTypes.Where(t => t is { IsClass: true, IsAbstract: false }))
         {
@@ -96,7 +111,7 @@ public static class CourierServiceCollectionExtensions
         }
     }
 
-    private static void RegisterOpenGeneric(IServiceCollection services, System.Reflection.TypeInfo type, ServiceLifetime lifetime, List<Type> openRequestHandlers)
+    private static void RegisterOpenGeneric(IServiceCollection services, TypeInfo type, ServiceLifetime lifetime, List<Type> openRequestHandlers)
     {
         var parameters = type.GenericTypeParameters;
         foreach (var @interface in type.ImplementedInterfaces.Where(i => i.IsGenericType))

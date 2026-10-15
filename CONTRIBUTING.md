@@ -73,6 +73,7 @@ src/DotCourier.Caching/      HybridCache-based caching / idempotency
 src/DotCourier.EntityFrameworkCore/  EF Core transaction per command
 src/DotCourier.Outbox.EntityFrameworkCore/  transactional outbox on EF Core
 src/DotCourier.Kafka/        outbox delivery to Kafka
+src/DotCourier.SourceGenerator/  compile-time registrations (Roslyn, netstandard2.0)
 tests/DotCourier.Tests/      xUnit, runs on net8.0 and net10.0
 assets/                      logo, icon and README images
 ```

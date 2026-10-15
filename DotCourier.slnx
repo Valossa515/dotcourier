@@ -6,10 +6,12 @@
     <Project Path="src/DotCourier.Outbox.EntityFrameworkCore/DotCourier.Outbox.EntityFrameworkCore.csproj" />
     <Project Path="src/DotCourier.Kafka/DotCourier.Kafka.csproj" />
     <Project Path="src/DotCourier.FluentValidation/DotCourier.FluentValidation.csproj" />
+    <Project Path="src/DotCourier.SourceGenerator/DotCourier.SourceGenerator.csproj" />
     <Project Path="src/DotCourier.Resilience/DotCourier.Resilience.csproj" />
     <Project Path="src/DotCourier/DotCourier.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/DotCourier.SourceGenerator.Tests/DotCourier.SourceGenerator.Tests.csproj" />
     <Project Path="tests/DotCourier.Tests/DotCourier.Tests.csproj" />
   </Folder>
 </Solution>

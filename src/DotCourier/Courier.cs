@@ -140,6 +140,20 @@ public partial class Courier : ICourier
         };
     }
 
+    // Wrappers built by generated registrations (DotCourier.SourceGenerator): closed generic types
+    // created with `new`, so dispatching these requests never needs MakeGenericType.
+    internal static void AddRequestWrapper(Type requestType, Func<RequestHandlerBase> create) => RequestHandlers.GetOrAdd(requestType, static (_, c) => c(), create);
+
+    internal static void AddStreamWrapper(Type requestType, Func<StreamHandlerBase> create) => StreamHandlers.GetOrAdd(requestType, static (_, c) => c(), create);
+
+    internal static void AddNotificationWrapper(Type notificationType, Func<NotificationHandlerWrapper> create) => NotificationHandlers.GetOrAdd(notificationType, static (_, c) => c(), create);
+
+    internal static bool HasRequestWrapper(Type requestType) => RequestHandlers.ContainsKey(requestType);
+
+    internal static bool HasStreamWrapper(Type requestType) => StreamHandlers.ContainsKey(requestType);
+
+    internal static bool HasNotificationWrapper(Type notificationType) => NotificationHandlers.ContainsKey(notificationType);
+
     private static StreamHandlerBase CreateStreamWrapper(Type requestType)
     {
         var streamInterface = requestType.GetInterfaces()

@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.9.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.10.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -49,7 +49,8 @@ dotcourier/
 │   ├── DotCourier.Caching/      # [Cacheable]/[Idempotent]/[InvalidatesCache] on HybridCache
 │   ├── DotCourier.EntityFrameworkCore/ # transaction per command + ICourierTransaction (after commit)
 │   ├── DotCourier.Outbox.EntityFrameworkCore/ # IOutbox + background processor (at-least-once delivery)
-│   └── DotCourier.Kafka/        # IOutboxDispatcher that publishes the outbox to Kafka (Confluent.Kafka)
+│   ├── DotCourier.Kafka/        # IOutboxDispatcher that publishes the outbox to Kafka (Confluent.Kafka)
+│   └── DotCourier.SourceGenerator/ # Roslyn generator (netstandard2.0, shipped as an analyzer): compile-time registrations
 ├── tests/DotCourier.Tests/      # xUnit, runs on net8.0 and net10.0 (Resilience/ subfolder per module)
 ├── assets/                      # logo + icon (SVG sources, PNGs rendered from them), before-after.svg
 ├── .github/                     # CI, NuGet publish, dependabot, issue/PR templates
@@ -70,6 +71,22 @@ dotcourier/
 | `DotCourier.Resilience` | `cfg.AddResilience(o => ...)`: Polly pipelines cached per (request type, strategy) in a singleton; rejections thrown as `CourierException` subclasses (`CircuitOpenException` 503, `RateLimitExceededException` 429, `BulkheadRejectedException` 503). Only the breaker is on by default. Breaker outside retry and bulkhead inside retry are pinned by tests. |
 
 ## Key mechanics
+
+- **Source generator (0.10.0):** `DotCourier.SourceGenerator` emits, per assembly, a module initializer
+  that calls `GeneratedCourierRegistry.Register(assembly, register)`; `AddCourier` looks it up with
+  `GeneratedCourierRegistry.Find`, which **forces the module constructor** (`typeof(T).Assembly` does not
+  run any code of that assembly; pinned by a test that loads a never-executed assembly). The calls are
+  generic over concrete types (`context.RequestHandler<TReq, TResp, THandler>()` etc.), which register the
+  descriptor and create the dispatch wrapper with `new`; open generics go through `context.OpenGeneric`
+  (same rules as the scan); any handler or type argument not accessible from generated code makes the
+  whole assembly fall back to `context.ScanAssembly()` (DOTCOURIER001). Registrations are emitted in
+  **metadata order** (`MetadataOrder`: namespaces popped from a stack, so children in reverse; nested
+  types last, breadth first), which is what `Assembly.DefinedTypes` returns: notification handler order
+  and first-handler-wins depend on it. `GeneratedRegistrationTests` asserts generated == scanned, entry
+  by entry and in order; the test project references the generator, so the whole suite runs generated.
+  Use a type's own `TypeParameters.Length`, never `IsGenericType` (true for types nested in a generic
+  type; that crashed the generator once, pinned by a test). Generator tests (`DotCourier.SourceGenerator.Tests`)
+  drive it with `CSharpGeneratorDriver` and check the output compiles.
 
 - **Streams (0.9.0):** `IStreamRequest<T>` / `IStreamRequestHandler<,>` / `IStreamPipelineBehavior<,>` /
   `StreamHandlerDelegate<T>()` / `ISender.CreateStream`, MediatR's names. `StreamHandlerWrapperImpl` is an

@@ -97,6 +97,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.EntityFrameworkCore) | Todo command numa transação do EF Core (commit / rollback), com efeitos colaterais pós-commit |
 | [`DotCourier.Outbox.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.Outbox.EntityFrameworkCore) | Transactional outbox: notificações gravadas junto com os dados e entregues pelo menos uma vez, em background |
 | [`DotCourier.Kafka`](https://www.nuget.org/packages/DotCourier.Kafka) | Entrega o outbox em tópicos do Kafka, para outros serviços consumirem os eventos |
+| [`DotCourier.SourceGenerator`](https://www.nuget.org/packages/DotCourier.SourceGenerator) | Registro em tempo de compilação: sem varrer os assemblies com reflection na inicialização |
 
 Todos os pacotes têm como alvo **net8.0** e **net10.0**.
 
@@ -750,6 +751,30 @@ builder.Services.AddOpenTelemetry()
 | Counter | `courier.cache.hits` / `courier.cache.misses` | `courier.request.type` |
 | Counter | `courier.idempotency.hits` / `courier.idempotency.misses` | `courier.request.type` |
 
+## ⚙️ Registro em tempo de compilação (source generator)
+
+```bash
+dotnet add package DotCourier.SourceGenerator
+```
+
+Só isso, sem mudar código. Em cada projeto que referencia o pacote, o gerador escreve em tempo de
+compilação o registro dos handlers, processors e validators daquele assembly, e o `AddCourier` usa
+esse registro em vez de varrer o assembly com reflection na inicialização. O dispatch também deixa de
+montar em runtime os wrappers de cada request (`MakeGenericType`).
+
+- **Mesmo resultado do scan:** os mesmos serviços, lifetimes e a mesma **ordem** (que decide a ordem
+  em que os handlers de notificação rodam). Os testes do DotCourier rodam com o registro gerado, e um
+  teste o compara, item por item, com o scan.
+- **Por projeto:** adicione o pacote em cada projeto que declara handlers (um projeto `Handlers` ou
+  `Application`). Assemblies sem ele continuam sendo varridos, então dá para misturar os dois.
+- **Avisos:** `DOTCOURIER001` quando um handler (ou o request dele) é `private`/`protected` e o código
+  gerado não consegue alcançá-lo: aquele assembly volta a ser varrido; deixe-o `internal`.
+  `DOTCOURIER002` quando duas classes tratam o mesmo request (só a primeira vale, como no scan).
+- `cfg.UseGeneratedRegistrations = false` desliga sem remover o pacote.
+
+O suporte completo a Native AOT (behaviors fechados em tempo de compilação e um teste com `PublishAot`)
+é o próximo passo do roadmap.
+
 ## 🔀 Migrando do MediatR
 
 1. Troque o pacote `MediatR` por `DotCourier`, e `using MediatR;` por `using DotCourier;`.
@@ -800,7 +825,8 @@ Cada módulo do [Spring Courier](https://github.com/Valossa515/spring-courier) g
 - [x] Transactional outbox com EF Core
 - [x] Entrega do outbox para Kafka
 - [x] Requests de streaming
-- [ ] Source generator para dispatch sem reflection e compatível com AOT
+- [x] Source generator: registro em tempo de compilação, sem varrer assemblies
+- [ ] Native AOT: behaviors fechados em tempo de compilação, verificado com `PublishAot`
 
 ## 🤝 Contribuindo
 
