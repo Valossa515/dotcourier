@@ -97,6 +97,14 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 
 Todos os pacotes têm como alvo **net8.0** e **net10.0**.
 
+## 🧪 Aplicação de exemplo
+
+O [**dotcourier-store**](https://github.com/Valossa515/dotcourier-store) é uma loja (catálogo,
+pedidos, pagamento, relatório) em **arquitetura hexagonal com DDD** que usa todas as funcionalidades
+abaixo com chamadas HTTP reais: validação, códigos de erro, cache, idempotência, retry, circuit
+breaker, rate limit, bulkhead, timeouts, notificações e mensagens traduzidas. Tem Swagger UI, EF Core
+com SQLite e um teste de ponta a ponta que o CI roda a cada push.
+
 ## ⚡ Começo rápido
 
 ```bash
