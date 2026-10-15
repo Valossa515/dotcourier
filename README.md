@@ -94,6 +94,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter and bulkhead on Polly v8 |
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Runs your `IValidator<T>` in the pipeline; FluentValidation exceptions become 400 |
 | [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Query caching, idempotent commands and cache invalidation on HybridCache (Redis-ready) |
+| [`DotCourier.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.EntityFrameworkCore) | Every command in an EF Core transaction (commit / rollback), with after-commit side effects |
 
 All packages target **net8.0** and **net10.0**.
 
@@ -497,6 +498,58 @@ System.Text.Json.
 | `LocalCacheDuration` | entry duration | caps the in-memory copy; with several instances, an eviction clears the shared level but other instances keep their memory copy until this expires |
 | `KeyPrefix` | `dotcourier` | to share one cache server between apps |
 
+## 💾 Transactions (EF Core)
+
+```bash
+dotnet add package DotCourier.EntityFrameworkCore
+```
+
+```csharp
+builder.Services.AddDbContext<StoreDbContext>(o => o.UseSqlServer(connectionString));
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddEntityFrameworkTransactions<StoreDbContext>());
+```
+
+Every **command** now runs in a transaction: it **commits** when the handler succeeds and **rolls
+back** when the handler throws *or* returns an error `Response<T>` (a `409 Conflict` after
+`SaveChangesAsync` undoes the save). Queries are not wrapped. Handlers keep calling
+`SaveChangesAsync` as usual; nothing is written for good until the command finishes.
+
+```csharp
+public sealed class PlaceOrderHandler(StoreDbContext db, ICourierTransaction tx, IEmailSender email)
+    : ICommandHandler<PlaceOrder, Response<OrderDto>>
+{
+    public async Task<Response<OrderDto>> Handle(PlaceOrder command, CancellationToken ct)
+    {
+        var order = Order.Place(command.Customer, command.Lines);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
+
+        // Runs only after the commit, and never if the command rolls back.
+        await tx.OnCommittedAsync(t => email.SendConfirmation(order.Id, t), ct);
+        return Response.Created(OrderDto.From(order));
+    }
+}
+```
+
+- **Nested commands** (sent from inside a handler) join the outer transaction: one commit at the
+  end, or one rollback of everything.
+- **`ICourierTransaction.OnCommittedAsync`** is Spring's `afterCommit`: e-mails, messages and other
+  side effects wait for the commit and are dropped on rollback. Outside a transaction they run
+  immediately. A failing action is logged; it cannot undo the commit.
+- **Retry** sits outside the transaction, so each attempt gets a fresh one. A rollback also
+  **clears the change tracker** (like JPA detaching the persistence context), so the next attempt
+  does not re-save the failed attempt's entities.
+- Works with `EnableRetryOnFailure`: the transaction runs through the context's execution strategy.
+- `[NotTransactional]` keeps a command out (e.g. one that only calls an external API);
+  `[Transactional]` brings in a plain `IRequest<T>`. Both live in the core package.
+
+| Option (`AddEntityFrameworkTransactions<T>(o => ...)`) | Default | |
+|---|---|---|
+| `IsolationLevel` | provider default | e.g. `IsolationLevel.Serializable` |
+| `AllRequests` | `false` | wrap every request, for apps that model writes as plain `IRequest<T>` (MediatR style) |
+
 ## ⏱️ Timeouts
 
 ```csharp
@@ -568,6 +621,7 @@ Differences to watch for:
 | Generic request handlers (`Create<T>`) | opt-in, closed at startup | ✅ closed on first dispatch |
 | Retry / circuit breaker / rate limit / bulkhead | ❌ | ✅ `DotCourier.Resilience` |
 | Query caching / idempotent commands | ❌ | ✅ `DotCourier.Caching` |
+| Transaction per command + after-commit actions | ❌ write your own behavior | ✅ `DotCourier.EntityFrameworkCore` |
 | Exceptions → status-coded `Response<T>` | ❌ | ✅ `Dispatch` |
 | Explicit behavior ordering | registration order | ✅ `BehaviorOrder` |
 | Streaming requests | ✅ | 🔜 |
@@ -583,7 +637,7 @@ Each [Spring Courier](https://github.com/Valossa515/spring-courier) module gets 
 - [x] Generic requests and open generic handlers
 - [x] Status helpers and machine-readable error codes
 - [x] Caching and idempotency: `HybridCache` / `IDistributedCache` (Redis included)
-- [ ] Transactions: EF Core / `TransactionScope` behavior
+- [x] Transactions: EF Core, with after-commit actions
 - [ ] Transactional outbox with EF Core
 - [ ] Outbox delivery to Kafka
 - [ ] Streaming requests

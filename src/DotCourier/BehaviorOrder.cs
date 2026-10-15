@@ -51,7 +51,7 @@ public static class BehaviorOrder
     /// <summary>Bulkhead behavior (reserved).</summary>
     public const int Bulkhead = -840;
 
-    /// <summary>Transaction behavior (reserved).</summary>
+    /// <summary>Transaction behavior (DotCourier.EntityFrameworkCore); inside retry, so each attempt gets its own transaction.</summary>
     public const int Transaction = -800;
 
     /// <summary>Timeout behavior for <see cref="HandlerTimeoutAttribute"/> requests.</summary>

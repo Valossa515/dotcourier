@@ -196,6 +196,19 @@ public sealed class SlowHandler : IRequestHandler<Slow, string>
     }
 }
 
+/// <summary>A generous timeout, so "fast handler" tests do not race a busy CI machine.</summary>
+[HandlerTimeout(10_000)]
+public sealed record Relaxed : IRequest<string>;
+
+public sealed class RelaxedHandler : IRequestHandler<Relaxed, string>
+{
+    public async Task<string> Handle(Relaxed request, CancellationToken cancellationToken)
+    {
+        await Task.Delay(1, cancellationToken);
+        return "done";
+    }
+}
+
 [HandlerTimeout(100)]
 public sealed record Stubborn : IRequest<string>;
 
