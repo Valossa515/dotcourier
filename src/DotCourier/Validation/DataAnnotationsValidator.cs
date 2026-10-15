@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using DotCourier.Behaviors;
+using DotCourier.Generated;
 
 namespace DotCourier.Validation;
 
@@ -13,15 +16,21 @@ internal static class DataAnnotationsValidator
 {
     private static readonly ConcurrentDictionary<Type, TypeRules> Cache = new();
 
-    public static List<ValidationError> Validate(object instance)
+    /// <remarks>
+    /// Validates the runtime type, as before; under trimming the members of <typeparamref name="T"/> (the request
+    /// type of the pipeline) are the ones guaranteed to survive, which covers sealed request records.
+    /// </remarks>
+    public static List<ValidationError> Validate<[DynamicallyAccessedMembers(CompileTimeTypes.Request)] T>(T instance)
+        where T : notnull
     {
         var errors = new List<ValidationError>();
-        var rules = Cache.GetOrAdd(instance.GetType(), BuildRules);
+        var rules = instance.GetType() == typeof(T) ? RulesOf(typeof(T)) : RulesOfRuntimeType(instance);
 
         foreach (var (property, attributes) in rules.Properties)
         {
             var value = property.GetValue(instance);
-            var context = new ValidationContext(instance) { MemberName = property.Name, DisplayName = property.Name };
+            var context = Context(instance, property.Name);
+            context.MemberName = property.Name;
             foreach (var attribute in attributes)
             {
                 var result = attribute.GetValidationResult(value, context);
@@ -39,7 +48,7 @@ internal static class DataAnnotationsValidator
             return errors;
         }
 
-        var objectContext = new ValidationContext(instance);
+        var objectContext = Context(instance, CourierDiagnostics.GetRequestName(instance.GetType()));
         foreach (var attribute in rules.TypeAttributes)
         {
             var result = attribute.GetValidationResult(instance, objectContext);
@@ -79,7 +88,21 @@ internal static class DataAnnotationsValidator
         }
     }
 
-    private static TypeRules BuildRules(Type type)
+    private static TypeRules RulesOf([DynamicallyAccessedMembers(CompileTimeTypes.Request)] Type type) =>
+        Cache.TryGetValue(type, out var rules) ? rules : Cache.GetOrAdd(type, BuildRules(type));
+
+    [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "A request derived from the pipeline's request type; only the declared type's members are guaranteed under trimming.")]
+    private static TypeRules RulesOfRuntimeType(object instance) => RulesOf(instance.GetType());
+
+    /// <summary>A context with an explicit display name, so it does not look the instance's type up with reflection.</summary>
+#if NET9_0_OR_GREATER
+    private static ValidationContext Context(object instance, string displayName) => new(instance, displayName, null, null);
+#else
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "The request type's properties are kept (DynamicallyAccessedMembers on the pipeline's request type) and the display name is set right away.")]
+    private static ValidationContext Context(object instance, string displayName) => new(instance) { DisplayName = displayName };
+#endif
+
+    private static TypeRules BuildRules([DynamicallyAccessedMembers(CompileTimeTypes.Request)] Type type)
     {
         var parameterAttributes = type.GetConstructors()
             .SelectMany(c => c.GetParameters())

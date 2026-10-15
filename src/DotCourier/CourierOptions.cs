@@ -11,4 +11,7 @@ public sealed class CourierOptions
 
     /// <summary>The fixed messages written into error responses.</summary>
     public CourierMessages Messages { get; init; } = CourierMessages.Default;
+
+    /// <summary>Compile-time mode; see <see cref="CourierConfiguration.RequireCompileTimeRegistrations"/>.</summary>
+    public bool RequireCompileTimeRegistrations { get; init; }
 }

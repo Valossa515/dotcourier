@@ -772,8 +772,44 @@ montar em runtime os wrappers de cada request (`MakeGenericType`).
   `DOTCOURIER002` quando duas classes tratam o mesmo request (só a primeira vale, como no scan).
 - `cfg.UseGeneratedRegistrations = false` desliga sem remover o pacote.
 
-O suporte completo a Native AOT (behaviors fechados em tempo de compilação e um teste com `PublishAot`)
-é o próximo passo do roadmap.
+## 🚀 Native AOT
+
+`DotCourier`, `DotCourier.AspNetCore` e `DotCourier.Resilience` funcionam em apps publicados com
+`<PublishAot>true</PublishAot>`, junto com o `DotCourier.SourceGenerator` em cada projeto que declara
+handlers. O CI publica um app de teste com Native AOT a cada push e o executa: requests (inclusive com
+resposta de value type), validação, exception handlers, notificações, streams, timeouts, retry e os
+resultados do ASP.NET Core.
+
+Sob Native AOT, o DotCourier roda no **modo compile-time**: nada é montado com `MakeGenericType` em
+runtime. Os behaviors são registrados já fechados para cada request (pelo core, por cada pacote e pelo
+gerador, para os behaviors abertos que você declara), e os exception handlers são chamados por invokers
+tipados.
+
+```csharp
+builder.Services.AddCourier(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
+
+// O Response<T> é serializado com o seu contexto JSON gerado, como tudo num app AOT.
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJson.Default));
+
+[JsonSerializable(typeof(Response<ProductDto>))]
+[JsonSerializable(typeof(Response<Unit>))]
+[JsonSerializable(typeof(IReadOnlyList<ValidationError>))] // os detalhes de um 400
+internal sealed partial class AppJson : JsonSerializerContext;
+```
+
+- **Ache os problemas antes de publicar:** ligue `cfg.RequireCompileTimeRegistrations = true` nos seus
+  testes para rodar o mesmo modo compile-time no runtime normal. (`PublishAot=true` já o liga no `dotnet run`.)
+- **Não suportado no modo compile-time, com erro claro na inicialização ou no dispatch:**
+  - handlers de request genéricos abertos (`Create<T>` atendido por `CreateHandler<T>`);
+  - behaviors abertos com constraints além de `notnull`;
+  - assemblies sem o gerador.
+- **Autores de bibliotecas:** registrem um `BehaviorTypes` com `cfg.AddBehaviorTypes(...)` junto das
+  chamadas a `AddOpenBehavior`, para que os seus behaviors abertos também possam ser fechados.
+- **Ainda não prontos para AOT:**
+  - `DotCourier.FluentValidation` (o próprio FluentValidation não é);
+  - `DotCourier.Caching` e `DotCourier.Outbox.EntityFrameworkCore`, cuja serialização JSON usa reflection;
+  - `DotCourier.EntityFrameworkCore` (o suporte a AOT do próprio EF Core ainda é experimental);
+  - `DotCourier.Kafka`.
 
 ## 🔀 Migrando do MediatR
 
@@ -809,6 +845,7 @@ Diferenças para ficar de olho:
 | Exceções → `Response<T>` com status code | ❌ | ✅ `Dispatch` |
 | Ordem explícita de behaviors | ordem de registro | ✅ `BehaviorOrder` |
 | Requests de streaming (`CreateStream`) | ✅ | ✅ mesmos nomes |
+| Native AOT | ❌ | ✅ com `DotCourier.SourceGenerator` |
 
 ## 🗺️ Roadmap
 
@@ -826,7 +863,7 @@ Cada módulo do [Spring Courier](https://github.com/Valossa515/spring-courier) g
 - [x] Entrega do outbox para Kafka
 - [x] Requests de streaming
 - [x] Source generator: registro em tempo de compilação, sem varrer assemblies
-- [ ] Native AOT: behaviors fechados em tempo de compilação, verificado com `PublishAot`
+- [x] Native AOT: behaviors fechados em tempo de compilação, verificado com `PublishAot` no CI
 
 ## 🤝 Contribuindo
 

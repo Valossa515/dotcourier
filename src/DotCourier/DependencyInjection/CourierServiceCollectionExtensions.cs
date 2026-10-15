@@ -1,5 +1,6 @@
-using DotCourier;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using DotCourier;
 using DotCourier.Behaviors;
 using DotCourier.Generated;
 using DotCourier.Internal;
@@ -10,6 +11,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>Registers DotCourier in an <see cref="IServiceCollection"/>.</summary>
 public static class CourierServiceCollectionExtensions
 {
+    private const DynamicallyAccessedMemberTypes OpenGenericMembers = DynamicallyAccessedMemberTypes.Interfaces | DynamicallyAccessedMemberTypes.PublicConstructors;
+
     private static readonly Type[] EnumerableServices =
     [
         typeof(INotificationHandler<>),
@@ -38,11 +41,13 @@ public static class CourierServiceCollectionExtensions
                 "No assemblies to scan. Call cfg.RegisterServicesFromAssemblyContaining<T>() or cfg.RegisterServicesFromAssembly(...).");
         }
 
+        var compileTime = configuration.RequireCompileTimeRegistrations;
         services.TryAddSingleton(new CourierOptions
         {
             NotificationPublishStrategy = configuration.NotificationPublishStrategy,
             UseDataAnnotations = configuration.UseDataAnnotations,
             Messages = configuration.Messages ?? CourierMessages.Default,
+            RequireCompileTimeRegistrations = compileTime,
         });
 
         services.TryAdd(new ServiceDescriptor(typeof(ICourier), typeof(Courier), configuration.Lifetime));
@@ -51,35 +56,55 @@ public static class CourierServiceCollectionExtensions
         services.TryAdd(new ServiceDescriptor(typeof(IPublisher), sp => sp.GetRequiredService<ICourier>(), configuration.Lifetime));
 
         var openRequestHandlers = new List<Type>();
+        var knownRequests = new List<IKnownRequest>();
+        var behaviorTypes = new List<BehaviorTypes> { CoreBehaviorTypes.Instance };
         foreach (var assembly in configuration.AssembliesToRegister)
         {
             // An assembly built with DotCourier.SourceGenerator describes its own handlers: no scanning.
-            var generated = configuration.UseGeneratedRegistrations ? GeneratedCourierRegistry.Find(assembly) : null;
+            var generated = configuration.UseGeneratedRegistrations || compileTime ? GeneratedCourierRegistry.Find(assembly) : null;
             if (generated is null)
             {
-                RegisterAssembly(services, assembly, configuration.Lifetime, openRequestHandlers);
+                Scan(services, assembly, configuration.Lifetime, openRequestHandlers, compileTime);
                 continue;
             }
 
             generated(new GeneratedRegistrationContext(
                 services,
                 configuration.Lifetime,
-                assembly,
-                scan => RegisterAssembly(services, scan, configuration.Lifetime, openRequestHandlers),
-                open => RegisterOpenGeneric(services, open.GetTypeInfo(), configuration.Lifetime, openRequestHandlers)));
+                () => Scan(services, assembly, configuration.Lifetime, openRequestHandlers, compileTime),
+                openRequestHandlers,
+                knownRequests,
+                behaviorTypes,
+                compileTime));
         }
 
-        services.TryAddSingleton(new GenericRequestHandlerRegistry(openRequestHandlers.Distinct().ToArray()));
+        services.TryAddSingleton(new GenericRequestHandlerRegistry(compileTime ? [] : openRequestHandlers.Distinct().ToArray()));
 
         foreach (var register in configuration.ServiceRegistrations)
         {
             register(services);
         }
 
-        RegisterBehaviors(services, configuration);
+        RegisterBehaviors(services, configuration, compileTime ? (knownRequests, behaviorTypes.Concat(configuration.BehaviorTypeProviders).ToList()) : null);
         return services;
     }
 
+    /// <summary>The reflection scan, for assemblies without generated registrations; never reached in compile-time mode.</summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Compile-time mode (always on under Native AOT) throws before scanning; scanning only runs where reflection is available.")]
+    private static void Scan(IServiceCollection services, Assembly assembly, ServiceLifetime lifetime, List<Type> openRequestHandlers, bool compileTime)
+    {
+        if (compileTime)
+        {
+            throw new InvalidOperationException(
+                $"The assembly '{assembly.GetName().Name}' has no compile-time registrations, which compile-time mode (and Native AOT) " +
+                "requires: add the DotCourier.SourceGenerator package to that project. If it is already there, look for warning " +
+                "DOTCOURIER001, which names the handler the generated code cannot reach.");
+        }
+
+        RegisterAssembly(services, assembly, lifetime, openRequestHandlers);
+    }
+
+    [RequiresUnreferencedCode("Scans the assembly's types with reflection; use DotCourier.SourceGenerator for trimmed and Native AOT applications.")]
     private static void RegisterAssembly(IServiceCollection services, Assembly assembly, ServiceLifetime lifetime, List<Type> openRequestHandlers)
     {
         foreach (var type in assembly.DefinedTypes.Where(t => t is { IsClass: true, IsAbstract: false }))
@@ -111,10 +136,10 @@ public static class CourierServiceCollectionExtensions
         }
     }
 
-    private static void RegisterOpenGeneric(IServiceCollection services, TypeInfo type, ServiceLifetime lifetime, List<Type> openRequestHandlers)
+    internal static void RegisterOpenGeneric(IServiceCollection services, [DynamicallyAccessedMembers(OpenGenericMembers)] Type type, ServiceLifetime lifetime, List<Type> openRequestHandlers)
     {
-        var parameters = type.GenericTypeParameters;
-        foreach (var @interface in type.ImplementedInterfaces.Where(i => i.IsGenericType))
+        var parameters = type.GetGenericArguments();
+        foreach (var @interface in type.GetInterfaces().Where(i => i.IsGenericType))
         {
             var definition = @interface.GetGenericTypeDefinition();
             if (definition == typeof(IRequestHandler<,>) || definition == typeof(IStreamRequestHandler<,>))
@@ -132,7 +157,10 @@ public static class CourierServiceCollectionExtensions
         }
     }
 
-    private static void RegisterBehaviors(IServiceCollection services, CourierConfiguration configuration)
+    private static void RegisterBehaviors(
+        IServiceCollection services,
+        CourierConfiguration configuration,
+        (List<IKnownRequest> Requests, List<BehaviorTypes> Types)? compileTime)
     {
         var builtIn = new List<CourierConfiguration.BehaviorRegistration>
         {
@@ -166,15 +194,31 @@ public static class CourierServiceCollectionExtensions
         // The container resolves IEnumerable<IPipelineBehavior<,>> in registration order and the
         // first entry is the outermost, so registering sorted by order fixes the pipeline shape.
         // OrderBy is stable: equal orders keep the order they were added in.
-        foreach (var behavior in builtIn.Concat(configuration.Behaviors).OrderBy(b => b.Order))
+        var behaviors = builtIn.Concat(configuration.Behaviors).OrderBy(b => b.Order).ToList();
+        if (compileTime is not { } known)
         {
-            services.TryAddEnumerable(new ServiceDescriptor(behavior.ServiceType, behavior.ImplementationType, behavior.Lifetime));
+            foreach (var behavior in behaviors)
+            {
+                services.TryAddEnumerable(new ServiceDescriptor(behavior.ServiceType, behavior.ImplementationType, behavior.Lifetime));
+            }
+
+            return;
         }
+
+        // Compile-time mode: the container must not close open generics, so close each behavior for each
+        // request known at compile time, keeping the same order.
+        var registration = new ClosedBehaviorRegistration(services, behaviors, known.Types);
+        foreach (var request in known.Requests)
+        {
+            request.RegisterBehaviors(registration);
+        }
+
+        registration.RemainingClosedBehaviors();
     }
 
-    private static CourierConfiguration.BehaviorRegistration Open(Type behaviorType, int order) =>
+    private static CourierConfiguration.BehaviorRegistration Open([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type behaviorType, int order) =>
         new(typeof(IPipelineBehavior<,>), behaviorType, order, ServiceLifetime.Transient);
 
-    private static CourierConfiguration.BehaviorRegistration OpenStream(Type behaviorType, int order) =>
+    private static CourierConfiguration.BehaviorRegistration OpenStream([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type behaviorType, int order) =>
         new(typeof(IStreamPipelineBehavior<,>), behaviorType, order, ServiceLifetime.Transient);
 }

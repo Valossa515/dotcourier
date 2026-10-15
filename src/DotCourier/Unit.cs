@@ -39,16 +39,22 @@ public readonly struct Unit : IEquatable<Unit>, IComparable<Unit>
     public static bool operator !=(Unit left, Unit right) => false;
 }
 
-/// <summary>Writes <see cref="Unit"/> as JSON <c>null</c> and reads anything back as <see cref="Unit.Value"/>.</summary>
-internal sealed class UnitJsonConverter : JsonConverter<Unit>
+/// <summary>
+/// Writes <see cref="Unit"/> as JSON <c>null</c> and reads anything back as <see cref="Unit.Value"/>. Public so
+/// System.Text.Json source generation (required under Native AOT) can use it for <c>Response&lt;Unit&gt;</c>.
+/// </summary>
+public sealed class UnitJsonConverter : JsonConverter<Unit>
 {
+    /// <inheritdoc />
     public override bool HandleNull => true;
 
+    /// <inheritdoc />
     public override Unit Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         reader.Skip();
         return Unit.Value;
     }
 
+    /// <inheritdoc />
     public override void Write(Utf8JsonWriter writer, Unit value, JsonSerializerOptions options) => writer.WriteNullValue();
 }

@@ -17,7 +17,7 @@ public static class ResponseResultExtensions
         ArgumentNullException.ThrowIfNull(response);
         return IsNoContent(response, includeBody)
             ? Results.NoContent()
-            : Results.Json(response, statusCode: response.StatusCode);
+            : new CourierJsonResult<T>(response);
     }
 
     /// <summary>

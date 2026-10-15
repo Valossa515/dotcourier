@@ -39,6 +39,7 @@ public static class CourierResilienceExtensions
             .AddOpenBehavior(typeof(RateLimiterBehavior<,>), BehaviorOrder.RateLimiter)
             .AddOpenBehavior(typeof(CircuitBreakerBehavior<,>), BehaviorOrder.CircuitBreaker)
             .AddOpenBehavior(typeof(RetryBehavior<,>), BehaviorOrder.Retry)
-            .AddOpenBehavior(typeof(BulkheadBehavior<,>), BehaviorOrder.Bulkhead);
+            .AddOpenBehavior(typeof(BulkheadBehavior<,>), BehaviorOrder.Bulkhead)
+            .AddBehaviorTypes(ResilienceBehaviorTypes.Instance);
     }
 }

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using DotCourier.Generated;
 using DotCourier.Validation;
 
 namespace DotCourier.Behaviors;
@@ -7,7 +9,7 @@ namespace DotCourier.Behaviors;
 /// <see cref="IRequestValidator{TRequest}"/>, throwing a <see cref="ValidationException"/>
 /// (400) with all failures before the handler runs.
 /// </summary>
-public sealed class ValidationBehavior<TRequest, TResponse>(
+public sealed class ValidationBehavior<[DynamicallyAccessedMembers(CompileTimeTypes.Request)] TRequest, TResponse>(
     IEnumerable<IRequestValidator<TRequest>> validators,
     CourierOptions? options = null)
     : IPipelineBehavior<TRequest, TResponse>
@@ -26,7 +28,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
 /// <summary>The validation shared by requests and streams.</summary>
 internal static class RequestValidation
 {
-    public static async Task ThrowIfInvalidAsync<TRequest>(
+    public static async Task ThrowIfInvalidAsync<[DynamicallyAccessedMembers(CompileTimeTypes.Request)] TRequest>(
         TRequest request,
         IEnumerable<IRequestValidator<TRequest>> validators,
         bool useDataAnnotations,

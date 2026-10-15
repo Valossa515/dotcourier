@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using DotCourier.Behaviors;
 using DotCourier.Internal;
 using Microsoft.Extensions.Logging;
@@ -33,7 +35,7 @@ public partial class Courier : ICourier
     public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var wrapper = (RequestHandlerWrapper<TResponse>)RequestHandlers.GetOrAdd(request.GetType(), CreateRequestWrapper);
+        var wrapper = (RequestHandlerWrapper<TResponse>)RequestWrapper(request.GetType());
         return wrapper.Handle(request, _services, cancellationToken);
     }
 
@@ -41,24 +43,25 @@ public partial class Courier : ICourier
     public Task<object?> Send(object request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var wrapper = RequestHandlers.GetOrAdd(request.GetType(), CreateRequestWrapper);
-        return wrapper.HandleBoxed(request, _services, cancellationToken);
+        return RequestWrapper(request.GetType()).HandleBoxed(request, _services, cancellationToken);
     }
 
     /// <inheritdoc />
     public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var wrapper = (StreamHandlerWrapper<TResponse>)StreamHandlers.GetOrAdd(request.GetType(), CreateStreamWrapper);
-        return wrapper.Handle(request, _services, cancellationToken);
+        return StreamWrapper(request.GetType()) is StreamHandlerWrapper<TResponse> wrapper
+            ? wrapper.Handle(request, _services, cancellationToken)
+            : MissingStream<TResponse>(request.GetType(), _options.Messages);
     }
 
     /// <inheritdoc />
     public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var wrapper = StreamHandlers.GetOrAdd(request.GetType(), CreateStreamWrapper);
-        return wrapper.HandleBoxed(request, _services, cancellationToken);
+        return StreamWrapper(request.GetType()) is { } wrapper
+            ? wrapper.HandleBoxed(request, _services, cancellationToken)
+            : MissingStream<object?>(request.GetType(), _options.Messages);
     }
 
     /// <inheritdoc />
@@ -120,10 +123,7 @@ public partial class Courier : ICourier
                 $"'{CourierDiagnostics.GetRequestName(notification.GetType())}' does not implement {nameof(INotification)}.", nameof(notification));
         }
 
-        var wrapper = NotificationHandlers.GetOrAdd(notification.GetType(), static type =>
-            (NotificationHandlerWrapper)Activator.CreateInstance(
-                typeof(NotificationHandlerWrapperImpl<>).MakeGenericType(type))!);
-        var executors = wrapper.GetExecutors(_services);
+        var executors = NotificationWrapper(notification.GetType())?.GetExecutors(_services) ?? [];
 
         if (executors.Length == 0)
         {
@@ -154,6 +154,63 @@ public partial class Courier : ICourier
 
     internal static bool HasNotificationWrapper(Type notificationType) => NotificationHandlers.ContainsKey(notificationType);
 
+    // Outside compile-time mode, types without a generated wrapper get one built with reflection. In
+    // compile-time mode (always on under Native AOT, where MakeGenericType cannot run) they have no handler
+    // registered at compile time, which is reported like any missing handler.
+    private const string Guarded = "Only reached outside compile-time mode, which is always on under Native AOT.";
+
+    private RequestHandlerBase RequestWrapper(Type requestType)
+    {
+        if (RequestHandlers.TryGetValue(requestType, out var wrapper))
+        {
+            return wrapper;
+        }
+
+        return _options.RequireCompileTimeRegistrations
+            ? throw new HandlerNotFoundException(requestType, _options.Messages)
+            : RequestHandlers.GetOrAdd(requestType, CreateRequestWrapper);
+    }
+
+    private StreamHandlerBase? StreamWrapper(Type requestType)
+    {
+        if (StreamHandlers.TryGetValue(requestType, out var wrapper))
+        {
+            return wrapper;
+        }
+
+        return _options.RequireCompileTimeRegistrations ? null : StreamHandlers.GetOrAdd(requestType, CreateStreamWrapper);
+    }
+
+    private NotificationHandlerWrapper? NotificationWrapper(Type notificationType)
+    {
+        if (NotificationHandlers.TryGetValue(notificationType, out var wrapper))
+        {
+            return wrapper;
+        }
+
+        return _options.RequireCompileTimeRegistrations ? null : NotificationHandlers.GetOrAdd(notificationType, CreateNotificationWrapper);
+    }
+
+    /// <summary>A stream that fails on first read, like one whose handler is missing.</summary>
+    private static async IAsyncEnumerable<T> MissingStream<T>(Type requestType, CourierMessages messages)
+    {
+        await Task.CompletedTask.ConfigureAwait(false);
+        if (requestType is not null)
+        {
+            throw new HandlerNotFoundException(requestType, messages);
+        }
+
+        yield break;
+    }
+
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Guarded)]
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = Guarded)]
+    private static NotificationHandlerWrapper CreateNotificationWrapper(Type notificationType) =>
+        (NotificationHandlerWrapper)Activator.CreateInstance(typeof(NotificationHandlerWrapperImpl<>).MakeGenericType(notificationType))!;
+
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Guarded)]
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = Guarded)]
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = Guarded)]
     private static StreamHandlerBase CreateStreamWrapper(Type requestType)
     {
         var streamInterface = requestType.GetInterfaces()
@@ -166,6 +223,9 @@ public partial class Courier : ICourier
         return (StreamHandlerBase)Activator.CreateInstance(wrapperType)!;
     }
 
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Guarded)]
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = Guarded)]
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = Guarded)]
     private static RequestHandlerBase CreateRequestWrapper(Type requestType)
     {
         var requestInterface = requestType.GetInterfaces()

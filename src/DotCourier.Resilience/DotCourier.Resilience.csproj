@@ -5,6 +5,7 @@
     <Description>Retry, circuit breaker, rate limiter and bulkhead as DotCourier pipeline behaviors, built on Polly v8. Rejections map to 503/429 responses.</Description>
     <RootNamespace>DotCourier.Resilience</RootNamespace>
     <PackageTags>$(PackageTags);resilience;polly;retry;circuit-breaker;rate-limiting;bulkhead</PackageTags>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>

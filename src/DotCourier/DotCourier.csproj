@@ -4,6 +4,8 @@
     <PackageId>DotCourier</PackageId>
     <Description>CQRS + Mediator for .NET with batteries included: pipeline behaviors (logging, validation, telemetry, timeouts), notifications, and a Response&lt;T&gt; wrapper. MediatR-compatible API, MIT licensed.</Description>
     <RootNamespace>DotCourier</RootNamespace>
+    <!-- Trim and Native AOT analyzers: any reflection that is not guarded or annotated fails the build. -->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>

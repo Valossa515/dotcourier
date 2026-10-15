@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using DotCourier.Generated;
 using System.Runtime.CompilerServices;
 using DotCourier.Internal;
 using DotCourier.Validation;
@@ -11,7 +13,7 @@ namespace DotCourier.Behaviors;
 /// Validates a stream request (DataAnnotations and every <see cref="IRequestValidator{TRequest}"/>)
 /// before the first item is produced; an invalid request throws <see cref="ValidationException"/>.
 /// </summary>
-public sealed class StreamValidationBehavior<TRequest, TResponse>(
+public sealed class StreamValidationBehavior<[DynamicallyAccessedMembers(CompileTimeTypes.Request)] TRequest, TResponse>(
     IEnumerable<IRequestValidator<TRequest>> validators,
     CourierOptions? options = null)
     : IStreamPipelineBehavior<TRequest, TResponse>
