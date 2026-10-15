@@ -19,7 +19,8 @@ public static class CourierServiceCollectionExtensions
 
     /// <summary>
     /// Registers <see cref="ICourier"/> (also exposed as <see cref="IMediator"/>, <see cref="ISender"/>
-    /// and <see cref="IPublisher"/>), scans the configured assemblies and wires the pipeline.
+    /// and <see cref="IPublisher"/>), scans the configured assemblies and wires the pipelines (requests
+    /// and streams).
     /// </summary>
     public static IServiceCollection AddCourier(this IServiceCollection services, Action<CourierConfiguration> configure)
     {
@@ -82,7 +83,7 @@ public static class CourierServiceCollectionExtensions
             foreach (var @interface in type.ImplementedInterfaces.Where(i => i.IsGenericType))
             {
                 var definition = @interface.GetGenericTypeDefinition();
-                if (definition == typeof(IRequestHandler<,>))
+                if (definition == typeof(IRequestHandler<,>) || definition == typeof(IStreamRequestHandler<,>))
                 {
                     // One handler per request: the first registration wins.
                     services.TryAdd(new ServiceDescriptor(@interface, type, lifetime));
@@ -101,7 +102,7 @@ public static class CourierServiceCollectionExtensions
         foreach (var @interface in type.ImplementedInterfaces.Where(i => i.IsGenericType))
         {
             var definition = @interface.GetGenericTypeDefinition();
-            if (definition == typeof(IRequestHandler<,>))
+            if (definition == typeof(IRequestHandler<,>) || definition == typeof(IStreamRequestHandler<,>))
             {
                 // e.g. CreateHandler<T> : IRequestHandler<Create<T>, T>: closed on first dispatch.
                 openRequestHandlers.Add(type);
@@ -127,16 +128,19 @@ public static class CourierServiceCollectionExtensions
         if (configuration.EnableLogging)
         {
             builtIn.Add(Open(typeof(LoggingBehavior<,>), BehaviorOrder.Logging));
+            builtIn.Add(OpenStream(typeof(StreamLoggingBehavior<,>), BehaviorOrder.Logging));
         }
 
         if (configuration.EnableTelemetry)
         {
             builtIn.Add(Open(typeof(TelemetryBehavior<,>), BehaviorOrder.Telemetry));
+            builtIn.Add(OpenStream(typeof(StreamTelemetryBehavior<,>), BehaviorOrder.Telemetry));
         }
 
         if (configuration.EnableValidation)
         {
             builtIn.Add(Open(typeof(ValidationBehavior<,>), BehaviorOrder.Validation));
+            builtIn.Add(OpenStream(typeof(StreamValidationBehavior<,>), BehaviorOrder.Validation));
         }
 
         if (configuration.EnableTimeouts)
@@ -155,4 +159,7 @@ public static class CourierServiceCollectionExtensions
 
     private static CourierConfiguration.BehaviorRegistration Open(Type behaviorType, int order) =>
         new(typeof(IPipelineBehavior<,>), behaviorType, order, ServiceLifetime.Transient);
+
+    private static CourierConfiguration.BehaviorRegistration OpenStream(Type behaviorType, int order) =>
+        new(typeof(IStreamPipelineBehavior<,>), behaviorType, order, ServiceLifetime.Transient);
 }

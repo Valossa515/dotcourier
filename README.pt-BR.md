@@ -675,6 +675,48 @@ O `CancellationToken` do handler é cancelado após 2 s, e quem chamou recebe um
 fluxo assíncrono, então combina com transações e contexto ambiente. Com retry ligado, cada
 tentativa tem seu próprio timeout.
 
+## 🌊 Requests de streaming
+
+Para resultados grandes (ou lentos) demais para voltar de uma vez, como uma exportação ou um feed, o
+handler **transmite** os itens com `yield return` e quem chamou vai lendo conforme chegam. A API é a
+mesma do MediatR:
+
+```csharp
+public sealed record ExportOrders(DateOnly From) : IStreamRequest<OrderRow>;
+
+public sealed class ExportOrdersHandler(StoreDbContext db) : IStreamRequestHandler<ExportOrders, OrderRow>
+{
+    public async IAsyncEnumerable<OrderRow> Handle(ExportOrders request, [EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var order in db.Orders.Where(o => o.Date >= request.From).AsAsyncEnumerable().WithCancellation(ct))
+        {
+            yield return OrderRow.From(order);
+        }
+    }
+}
+
+await foreach (var row in courier.CreateStream(new ExportOrders(from), ct))
+{
+    await writer.WriteLineAsync(row.ToCsv());
+}
+```
+
+No ASP.NET Core, retorne o stream de um endpoint e ele é serializado como um array JSON sem
+juntar os itens antes: `app.MapGet("/orders/export", (ICourier c, CancellationToken ct) => c.CreateStream(new ExportOrders(...), ct));`
+
+- **Preguiçoso:** nada roda até o stream ser lido; um handler inexistente ou um request inválido
+  aparece na primeira leitura.
+- A **validação** (DataAnnotations e `IRequestValidator<T>`, incluindo FluentValidation) roda antes do
+  primeiro item. O **log** informa a quantidade de itens e se o stream terminou, foi interrompido por
+  quem chamou, foi cancelado ou falhou. A **telemetria** abre um span para o stream inteiro, pai dos
+  spans do próprio handler.
+- **Cancelamento:** o token passado para o `CreateStream` e o passado para o `WithCancellation`
+  chegam os dois ao handler; parar no meio (`break`) encerra o handler também.
+- **Behaviors:** implemente `IStreamPipelineBehavior<TRequest, TItem>` e registre com
+  `cfg.AddOpenStreamBehavior(typeof(MeuBehavior<,>), order)` ou `cfg.AddStreamBehavior<...>()`. Os
+  behaviors de request (retry, cache, transações...) não se aplicam a streams.
+- Handlers de stream genéricos abertos funcionam como os de request (`StreamAll<T>` atendido por `StreamAllHandler<T>`).
+
 ## 📣 Notificações
 
 ```csharp
@@ -722,7 +764,8 @@ Diferenças para ficar de olho:
 - `IRequest` é `IRequest<Unit>`, como no MediatR 11, então `Send` num request sem retorno devolve `Task<Unit>`.
 - Por padrão, falhas em handlers de notificação são logadas em vez de lançadas (veja acima).
 - Logging, telemetria, validação e timeouts vêm ligados por padrão.
-- Requests de streaming (`IStreamRequest`) ainda não são suportados.
+- Behaviors de stream são registrados com `AddOpenStreamBehavior(type, order)`: o segundo parâmetro
+  é a ordem no pipeline, não o lifetime (igual ao `AddOpenBehavior`).
 
 ### Comparação rápida
 
@@ -740,7 +783,7 @@ Diferenças para ficar de olho:
 | Entrega do outbox para Kafka | ❌ | ✅ `DotCourier.Kafka` |
 | Exceções → `Response<T>` com status code | ❌ | ✅ `Dispatch` |
 | Ordem explícita de behaviors | ordem de registro | ✅ `BehaviorOrder` |
-| Requests de streaming | ✅ | 🔜 |
+| Requests de streaming (`CreateStream`) | ✅ | ✅ mesmos nomes |
 
 ## 🗺️ Roadmap
 
@@ -756,7 +799,7 @@ Cada módulo do [Spring Courier](https://github.com/Valossa515/spring-courier) g
 - [x] Transações: EF Core, com ações pós-commit
 - [x] Transactional outbox com EF Core
 - [x] Entrega do outbox para Kafka
-- [ ] Requests de streaming
+- [x] Requests de streaming
 - [ ] Source generator para dispatch sem reflection e compatível com AOT
 
 ## 🤝 Contribuindo

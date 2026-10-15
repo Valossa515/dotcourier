@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.8.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.9.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -70,6 +70,17 @@ dotcourier/
 | `DotCourier.Resilience` | `cfg.AddResilience(o => ...)`: Polly pipelines cached per (request type, strategy) in a singleton; rejections thrown as `CourierException` subclasses (`CircuitOpenException` 503, `RateLimitExceededException` 429, `BulkheadRejectedException` 503). Only the breaker is on by default. Breaker outside retry and bulkhead inside retry are pinned by tests. |
 
 ## Key mechanics
+
+- **Streams (0.9.0):** `IStreamRequest<T>` / `IStreamRequestHandler<,>` / `IStreamPipelineBehavior<,>` /
+  `StreamHandlerDelegate<T>()` / `ISender.CreateStream`, MediatR's names. `StreamHandlerWrapperImpl` is an
+  async iterator, so even the handler lookup is lazy (as in MediatR); the `[EnumeratorCancellation]` token
+  merges `CreateStream`'s and `WithCancellation`'s. Stream handlers share the scanning and the generic
+  registry with request handlers. Built-ins: `StreamLoggingBehavior`, `StreamTelemetryBehavior`,
+  `StreamValidationBehavior` (same orders and switches as the request ones), built on
+  `StreamObserver.Observe`, which reports completed / stopped-by-caller / failed with the item count and
+  **re-sets `Activity.Current` around each `MoveNextAsync`**: after a `yield` the iterator resumes in the
+  caller's context, and without that the handler's spans would hang off the caller's span (pinned by a
+  test). Request-only modules (resilience, caching, transactions) do not apply to streams.
 
 - **Pipeline order:** behaviors are registered sorted by `order` (stable), because MS DI
   returns `IEnumerable<IPipelineBehavior<,>>` in registration order and the first is outermost.
