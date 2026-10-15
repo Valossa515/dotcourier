@@ -477,7 +477,10 @@ public sealed record PlaceOrder(string IdempotencyKey, Cart Cart) : ICommand<Res
 - **`[Idempotent]`** runs a command once: repeats get the recorded result, and **concurrent
   duplicates wait for the first execution** instead of running in parallel. Failures are not
   recorded, so a retry runs again. Implement `IIdempotencyKey` to key it by a client-provided
-  `Idempotency-Key` header instead of the request content.
+  `Idempotency-Key` header instead of the request content. The response only leaves once the record
+  is in the shared cache, so a retry that reaches another instance gets it too. Waiting for the first
+  execution, however, happens per instance: two duplicates arriving **at the same time on different
+  instances** can both run.
 - **`ICourierCache`** evicts from code: `InvalidateAsync<GetProduct>()`, `InvalidateAsync(request)`,
   `InvalidateAllAsync()`, `ForgetIdempotentResultAsync(request)`.
 

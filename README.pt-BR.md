@@ -481,6 +481,9 @@ public sealed record PlaceOrder(string IdempotencyKey, Cart Cart) : ICommand<Res
   **duplicatas simultâneas esperam a primeira execução** em vez de rodarem em paralelo. Falhas
   não são registradas, então uma nova tentativa executa de novo. Implemente `IIdempotencyKey`
   para usar como chave um header `Idempotency-Key` enviado pelo cliente, em vez do conteúdo do request.
+  A resposta só sai depois que o registro está no cache compartilhado, então uma nova tentativa que
+  chegue a outra instância também o encontra. Já a espera pela primeira execução vale por instância:
+  duas duplicatas que chegam **ao mesmo tempo em instâncias diferentes** podem rodar as duas.
 - **`ICourierCache`** remove por código: `InvalidateAsync<GetProduct>()`, `InvalidateAsync(request)`,
   `InvalidateAllAsync()`, `ForgetIdempotentResultAsync(request)`.
 

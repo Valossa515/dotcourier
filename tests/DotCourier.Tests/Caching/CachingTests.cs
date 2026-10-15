@@ -254,6 +254,24 @@ public class CachingTests
     }
 
     [Fact]
+    public async Task An_idempotent_result_reaches_the_shared_cache_before_the_response_returns()
+    {
+        // HybridCache writes the shared level in the background after handing the value back. With a
+        // slow Redis, a retry sent to another instance right away would miss the record and run the
+        // command again: the idempotency behavior must wait for that write.
+        var shared = new FakeRedis(writeDelay: TimeSpan.FromMilliseconds(300));
+        var log = new CallLog();
+        var (instanceA, _) = TestHost.Build(cfg => cfg.AddCaching(), registerServices: s => s.AddSingleton<IDistributedCache>(shared), sharedLog: log);
+        var (instanceB, _) = TestHost.Build(cfg => cfg.AddCaching(), registerServices: s => s.AddSingleton<IDistributedCache>(shared), sharedLog: log);
+
+        var orderA = await instanceA.Courier().Send(new PlaceOrder("fay", 2));
+        var orderB = await instanceB.Courier().Send(new PlaceOrder("fay", 2));
+
+        Assert.Equal(orderA, orderB);
+        Assert.Equal(["order fay"], log.Entries);
+    }
+
+    [Fact]
     public async Task Results_kept_out_of_the_cache_do_not_produce_error_logs()
     {
         var logs = new CapturingLoggerProvider();
@@ -277,7 +295,8 @@ public class CachingTests
 }
 
 /// <summary>An out-of-process cache stand-in: a plain IDistributedCache that HybridCache treats as a real L2.</summary>
-internal sealed class FakeRedis : IDistributedCache
+/// <summary>An in-memory stand-in for Redis; <paramref name="writeDelay"/> imitates a slow network write.</summary>
+internal sealed class FakeRedis(TimeSpan writeDelay = default) : IDistributedCache
 {
     private readonly MemoryDistributedCache _inner = new(Options.Create(new MemoryDistributedCacheOptions()));
 
@@ -287,8 +306,15 @@ internal sealed class FakeRedis : IDistributedCache
 
     public void Set(string key, byte[] value, DistributedCacheEntryOptions options) => _inner.Set(key, value, options);
 
-    public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default) =>
-        _inner.SetAsync(key, value, options, token);
+    public async Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+    {
+        if (writeDelay > TimeSpan.Zero)
+        {
+            await Task.Delay(writeDelay, CancellationToken.None);
+        }
+
+        await _inner.SetAsync(key, value, options, token);
+    }
 
     public void Refresh(string key) => _inner.Refresh(key);
 
