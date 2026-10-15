@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="DotCourier.Tests" />
+    <InternalsVisibleTo Include="DotCourier.SourceGenerator.Tests" />
   </ItemGroup>
 
 </Project>

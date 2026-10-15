@@ -29,6 +29,9 @@
     <ProjectReference Include="..\..\src\DotCourier.EntityFrameworkCore\DotCourier.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Outbox.EntityFrameworkCore\DotCourier.Outbox.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Kafka\DotCourier.Kafka.csproj" />
+
+    <!-- Every test runs with the compile-time registrations (GeneratedRegistrationTests compares them with the scan). -->
+    <ProjectReference Include="..\..\src\DotCourier.SourceGenerator\DotCourier.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

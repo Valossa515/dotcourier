@@ -26,6 +26,13 @@ public sealed class CourierConfiguration
     /// <summary>Whether the validation behavior evaluates DataAnnotations. Default <c>true</c>.</summary>
     public bool UseDataAnnotations { get; set; } = true;
 
+    /// <summary>
+    /// Use the registrations generated at compile time by <c>DotCourier.SourceGenerator</c> for the
+    /// assemblies that have them, instead of scanning those assemblies with reflection. Assemblies built
+    /// without the generator are always scanned. Default <c>true</c>.
+    /// </summary>
+    public bool UseGeneratedRegistrations { get; set; } = true;
+
     /// <summary>Registers the behavior that enforces <see cref="HandlerTimeoutAttribute"/>. Default <c>true</c>.</summary>
     public bool EnableTimeouts { get; set; } = true;
 

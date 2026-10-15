@@ -74,6 +74,7 @@ src/DotCourier.Caching/      cache / idempotência sobre HybridCache
 src/DotCourier.EntityFrameworkCore/  transação do EF Core por command
 src/DotCourier.Outbox.EntityFrameworkCore/  transactional outbox sobre EF Core
 src/DotCourier.Kafka/        entrega do outbox para o Kafka
+src/DotCourier.SourceGenerator/  registro em tempo de compilação (Roslyn, netstandard2.0)
 tests/DotCourier.Tests/      xUnit, roda em net8.0 e net10.0
 assets/                      logo, ícone e imagens do README
 ```
