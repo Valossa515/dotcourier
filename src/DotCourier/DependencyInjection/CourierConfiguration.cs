@@ -220,9 +220,21 @@ public sealed class CourierConfiguration
 
     internal IReadOnlyList<BehaviorTypes> BehaviorTypeProviders => _behaviorTypes;
 
-    internal readonly record struct BehaviorRegistration(
-        Type ServiceType,
-        [property: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type ImplementationType,
-        int Order,
-        ServiceLifetime Lifetime);
+    // A plain struct, not a positional record: the annotation must sit on the constructor parameter too,
+    // or the trimmer sees an unannotated value stored in the annotated property.
+    internal readonly struct BehaviorRegistration(
+        Type serviceType,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType,
+        int order,
+        ServiceLifetime lifetime)
+    {
+        public Type ServiceType { get; } = serviceType;
+
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        public Type ImplementationType { get; } = implementationType;
+
+        public int Order { get; } = order;
+
+        public ServiceLifetime Lifetime { get; } = lifetime;
+    }
 }
