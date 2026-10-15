@@ -25,6 +25,42 @@ public class NotificationTests
     }
 
     [Fact]
+    public async Task SequentialThenThrow_runs_every_handler_then_reports_the_failure()
+    {
+        var (services, log) = TestHost.Build(cfg => cfg.NotificationPublishStrategy = NotificationPublishStrategy.SequentialThenThrow);
+
+        var ex = await Assert.ThrowsAsync<NotificationHandlerException>(() => services.Courier().Publish(new ItemCreated("fail")));
+
+        Assert.Equal(typeof(FailingItemCreatedHandler), ex.HandlerType);
+        Assert.Equal(["first", "failing", "last"], log.Entries);
+    }
+
+    [Fact]
+    public async Task SequentialThenThrow_aggregates_several_failures()
+    {
+        var (services, log) = TestHost.Build(cfg => cfg.NotificationPublishStrategy = NotificationPublishStrategy.SequentialThenThrow);
+
+        var ex = await Assert.ThrowsAsync<AggregateException>(() => services.Courier().Publish(new ItemCreated("fail twice")));
+
+        Assert.Equal(
+            [typeof(FailingItemCreatedHandler), typeof(LastItemCreatedHandler)],
+            ex.InnerExceptions.Cast<NotificationHandlerException>().Select(e => e.HandlerType));
+        Assert.Equal(["first", "failing", "last"], log.Entries);
+    }
+
+    [Fact]
+    public async Task A_strategy_can_be_chosen_per_call()
+    {
+        var (services, log) = TestHost.Build(); // configured: Sequential, which swallows failures
+        var courier = Assert.IsType<Courier>(services.Courier());
+
+        await Assert.ThrowsAsync<NotificationHandlerException>(() => courier.Publish(new ItemCreated("fail"), NotificationPublishStrategy.SequentialThenThrow));
+        await courier.Publish(new ItemCreated("fail")); // the configured strategy is unchanged
+
+        Assert.Equal(["first", "failing", "last", "first", "failing", "last"], log.Entries);
+    }
+
+    [Fact]
     public async Task ParallelWhenAll_runs_every_handler()
     {
         var (services, log) = TestHost.Build(cfg => cfg.NotificationPublishStrategy = NotificationPublishStrategy.ParallelWhenAll);

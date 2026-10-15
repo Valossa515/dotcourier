@@ -26,7 +26,8 @@ internal static class CachedExecution
         TimeSpan? localDuration,
         string[] tags,
         RequestHandlerDelegate<TResponse> next,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool awaitSharedWrite = false)
     {
         // HybridCache starts the factory on a separate work item WITHOUT the caller's ExecutionContext
         // whenever the caller's token can be cancelled, which is always true for an HTTP request
@@ -36,6 +37,13 @@ internal static class CachedExecution
         var state = (Next: next, Executed: new StrongBox<bool>(), Context: ExecutionContext.Capture());
         var local = localDuration is { } max && max < duration ? max : duration;
         var entryOptions = new HybridCacheEntryOptions { Expiration = duration, LocalCacheExpiration = local };
+
+        // GetOrCreateAsync hands the value back first and writes the shared (distributed) level in the
+        // background. For idempotency that is too late: a retry reaching another instance meanwhile
+        // would run the command again. So skip that write and do it below, awaited.
+        var createOptions = awaitSharedWrite
+            ? new HybridCacheEntryOptions { Expiration = duration, LocalCacheExpiration = local, Flags = HybridCacheEntryFlags.DisableDistributedCacheWrite }
+            : entryOptions;
         try
         {
             var response = await cache.GetOrCreateAsync(
@@ -52,9 +60,16 @@ internal static class CachedExecution
 
                     return result;
                 },
-                entryOptions,
+                createOptions,
                 tags,
                 cancellationToken).ConfigureAwait(false);
+
+            if (awaitSharedWrite && state.Executed.Value)
+            {
+                // Not the caller's token: the command already ran, so its record must be written even
+                // if the request is being cancelled.
+                await cache.SetAsync(key, response, entryOptions, tags, CancellationToken.None).ConfigureAwait(false);
+            }
 
             return (response, state.Executed.Value);
         }

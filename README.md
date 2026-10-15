@@ -95,6 +95,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Runs your `IValidator<T>` in the pipeline; FluentValidation exceptions become 400 |
 | [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Query caching, idempotent commands and cache invalidation on HybridCache (Redis-ready) |
 | [`DotCourier.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.EntityFrameworkCore) | Every command in an EF Core transaction (commit / rollback), with after-commit side effects |
+| [`DotCourier.Outbox.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.Outbox.EntityFrameworkCore) | Transactional outbox: notifications stored with your data, delivered at least once in the background |
 
 All packages target **net8.0** and **net10.0**.
 
@@ -476,7 +477,10 @@ public sealed record PlaceOrder(string IdempotencyKey, Cart Cart) : ICommand<Res
 - **`[Idempotent]`** runs a command once: repeats get the recorded result, and **concurrent
   duplicates wait for the first execution** instead of running in parallel. Failures are not
   recorded, so a retry runs again. Implement `IIdempotencyKey` to key it by a client-provided
-  `Idempotency-Key` header instead of the request content.
+  `Idempotency-Key` header instead of the request content. The response only leaves once the record
+  is in the shared cache, so a retry that reaches another instance gets it too. Waiting for the first
+  execution, however, happens per instance: two duplicates arriving **at the same time on different
+  instances** can both run.
 - **`ICourierCache`** evicts from code: `InvalidateAsync<GetProduct>()`, `InvalidateAsync(request)`,
   `InvalidateAllAsync()`, `ForgetIdempotentResultAsync(request)`.
 
@@ -550,6 +554,63 @@ public sealed class PlaceOrderHandler(StoreDbContext db, ICourierTransaction tx,
 | `IsolationLevel` | provider default | e.g. `IsolationLevel.Serializable` |
 | `AllRequests` | `false` | wrap every request, for apps that model writes as plain `IRequest<T>` (MediatR style) |
 
+## 📮 Transactional outbox
+
+```bash
+dotnet add package DotCourier.Outbox.EntityFrameworkCore
+```
+
+`OnCommittedAsync` runs side effects after the commit, but in memory: if the process dies right
+after the commit, they are lost. The **outbox** stores the notification **in the same transaction**
+as your data and delivers it afterwards, from a background processor, until it succeeds.
+
+```csharp
+// 1. Map the table in your DbContext, then add a migration as usual.
+protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.AddCourierOutbox();
+
+// 2. Enable it (with transactions, so the message commits or rolls back with the command).
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddEntityFrameworkTransactions<StoreDbContext>()
+    .AddOutbox<StoreDbContext>());
+
+// 3. Capture notifications instead of publishing them.
+public sealed class PlaceOrderHandler(StoreDbContext db, IOutbox outbox) : ICommandHandler<PlaceOrder, Response<OrderDto>>
+{
+    public async Task<Response<OrderDto>> Handle(PlaceOrder command, CancellationToken ct)
+    {
+        var order = Order.Place(command.Customer, command.Lines);
+        db.Orders.Add(order);
+        outbox.Add(new OrderPlaced(order.Id, order.Total)); // written by the SaveChanges below
+        await db.SaveChangesAsync(ct);
+        return Response.Created(OrderDto.From(order));
+    }
+}
+```
+
+- **Atomic:** the message is a row saved by your `SaveChangesAsync` (`outbox.Add`), or by
+  `outbox.PublishAsync`, which saves for you. It exists if and only if the data does.
+- **At least once:** the processor delivers each message to the notification handlers, every handler
+  runs, and any failure has the message retried (up to `MaxAttempts`, then `Failed`). A crash between
+  delivering and recording it delivers it again. **Handlers must tolerate duplicates.**
+- **Fast:** the processor wakes up right after the commit; polling is only the safety net.
+- **Several instances:** a message is claimed with the status as the concurrency token, so only one
+  instance delivers it. Messages left `Processing` by a crashed instance return after `ProcessingTimeout`.
+- **Elsewhere:** register your own `IOutboxDispatcher` to send messages to a broker instead of the
+  in-process handlers (Kafka support is next on the roadmap).
+
+| Option (`AddOutbox<T>(o => ...)`) | Default | |
+|---|---|---|
+| `PollInterval` | 5 s | safety-net polling |
+| `BatchSize` | 100 | messages per cycle |
+| `MaxAttempts` | 5 | then `Failed` (with `LastError` in the row) |
+| `ProcessingTimeout` | 1 min | after which an abandoned message is delivered again |
+| `RunProcessor` | `true` | `false` on instances that only write |
+| `JsonSerializerOptions` | web defaults | how notifications are stored |
+
+The row stores the notification as JSON and its type without the assembly version, so messages
+written before a deploy are still read after it.
+
 ## ⏱️ Timeouts
 
 ```csharp
@@ -573,6 +634,7 @@ await courier.Publish(new ProductCreated(id), ct);
 | `Sequential` (default) | one by one; failures are logged, the rest still run, `Publish` does not throw |
 | `ParallelWhenAll` | all at once; failures logged; avoid sharing a scoped `DbContext` |
 | `StopOnFirstError` | one by one; first failure throws `NotificationHandlerException` |
+| `SequentialThenThrow` | one by one; every handler runs, then failures are thrown (the outbox uses it) |
 
 > MediatR's default publisher throws on the first failure. If you depend on that, pick `StopOnFirstError`.
 
@@ -622,6 +684,7 @@ Differences to watch for:
 | Retry / circuit breaker / rate limit / bulkhead | ❌ | ✅ `DotCourier.Resilience` |
 | Query caching / idempotent commands | ❌ | ✅ `DotCourier.Caching` |
 | Transaction per command + after-commit actions | ❌ write your own behavior | ✅ `DotCourier.EntityFrameworkCore` |
+| Transactional outbox | ❌ | ✅ `DotCourier.Outbox.EntityFrameworkCore` |
 | Exceptions → status-coded `Response<T>` | ❌ | ✅ `Dispatch` |
 | Explicit behavior ordering | registration order | ✅ `BehaviorOrder` |
 | Streaming requests | ✅ | 🔜 |
@@ -638,7 +701,7 @@ Each [Spring Courier](https://github.com/Valossa515/spring-courier) module gets 
 - [x] Status helpers and machine-readable error codes
 - [x] Caching and idempotency: `HybridCache` / `IDistributedCache` (Redis included)
 - [x] Transactions: EF Core, with after-commit actions
-- [ ] Transactional outbox with EF Core
+- [x] Transactional outbox with EF Core
 - [ ] Outbox delivery to Kafka
 - [ ] Streaming requests
 - [ ] Source generator for reflection-free, AOT-friendly dispatch

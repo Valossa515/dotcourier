@@ -115,7 +115,7 @@ internal sealed partial class IdempotencyBehavior<TRequest, TResponse> : IPipeli
     private async Task<TResponse> Run(string key, TimeSpan duration, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
         var (response, executed) = await CachedExecution
-            .GetOrRunAsync(_cache, key, duration, _options.LocalCacheDuration, _keys.IdempotencyTags, next, cancellationToken)
+            .GetOrRunAsync(_cache, key, duration, _options.LocalCacheDuration, _keys.IdempotencyTags, next, cancellationToken, awaitSharedWrite: true)
             .ConfigureAwait(false);
 
         var tag = new KeyValuePair<string, object?>("courier.request.type", RequestName);

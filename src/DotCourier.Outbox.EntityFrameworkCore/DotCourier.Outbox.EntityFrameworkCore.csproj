@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>DotCourier.Outbox.EntityFrameworkCore</PackageId>
+    <Description>Transactional outbox for DotCourier on EF Core: notifications are stored in the same transaction as your data and delivered afterwards, at least once, by a background processor.</Description>
+    <RootNamespace>DotCourier.Outbox</RootNamespace>
+    <PackageTags>$(PackageTags);outbox;transactional-outbox;entityframeworkcore;efcore;events</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotCourier.EntityFrameworkCore\DotCourier.EntityFrameworkCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DotCourier.Tests" />
+  </ItemGroup>
+
+</Project>

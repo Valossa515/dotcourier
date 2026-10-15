@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.6.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.7.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -47,7 +47,8 @@ dotcourier/
 │   ├── DotCourier.Resilience/   # retry / circuit breaker / rate limiter / bulkhead on Polly v8
 │   ├── DotCourier.FluentValidation/ # IValidator<T> in the validation step + exception translation
 │   ├── DotCourier.Caching/      # [Cacheable]/[Idempotent]/[InvalidatesCache] on HybridCache
-│   └── DotCourier.EntityFrameworkCore/ # transaction per command + ICourierTransaction (after commit)
+│   ├── DotCourier.EntityFrameworkCore/ # transaction per command + ICourierTransaction (after commit)
+│   └── DotCourier.Outbox.EntityFrameworkCore/ # IOutbox + background processor (at-least-once delivery)
 ├── tests/DotCourier.Tests/      # xUnit, runs on net8.0 and net10.0 (Resilience/ subfolder per module)
 ├── assets/                      # logo + icon (SVG sources, PNGs rendered from them), before-after.svg
 ├── .github/                     # CI, NuGet publish, dependabot, issue/PR templates
@@ -61,8 +62,9 @@ dotcourier/
 | `DotCourier` | Dispatcher, ordered pipeline, notifications, `Response<T>`, logging/telemetry/validation/timeout behaviors |
 | `DotCourier.AspNetCore` | `Response<T>` → `IResult` / `IActionResult` |
 | `DotCourier.FluentValidation` | `cfg.AddFluentValidation()`: registers an open `IRequestValidator<>` adapter over `IValidator<T>` (merged into the core validation 400) and scans validators; an innermost (`int.MaxValue`) behavior turns FluentValidation's exception into DotCourier's `ValidationException` so retry never repeats an invalid request (pinned by a test). |
-| `DotCourier.Caching` | `cfg.AddCaching(o => ...)`: attributes live in **core** (no dependency) so contracts can be annotated. Behaviors: idempotency (-995), cache invalidation (-951, outside transactions → after commit), caching (-950). Storage is `HybridCache` (pinned to 9.x so net8 apps stay on Microsoft.Extensions 9.0); any registered `IDistributedCache` becomes L2 (but HybridCache ignores `MemoryDistributedCache`). Keys hash the request serialized as JSON (record `ToString()` collides on collections; pinned by a test). Non-successful/null results are carried out of the factory in an internal `SkipCacheException` so they are never stored; stampede protection gives in-process dedupe for concurrent idempotent duplicates. |
+| `DotCourier.Caching` | `cfg.AddCaching(o => ...)`: attributes live in **core** (no dependency) so contracts can be annotated. Behaviors: idempotency (-995), cache invalidation (-951, outside transactions → after commit), caching (-950). Storage is `HybridCache` (pinned to 9.x so net8 apps stay on Microsoft.Extensions 9.0); any registered `IDistributedCache` becomes L2 (but HybridCache ignores `MemoryDistributedCache`). Keys hash the request serialized as JSON (record `ToString()` collides on collections; pinned by a test). Non-successful/null results are carried out of the factory in an internal `SkipCacheException` so they are never stored; stampede protection gives in-process dedupe for concurrent idempotent duplicates. HybridCache writes L2 **in the background** after returning the value (and only logs L2 failures), so idempotency runs `GetOrCreateAsync` with `DisableDistributedCacheWrite` and then an **awaited** `SetAsync` (token `None`): the response leaves only after Redis has the record (pinned by a test with a slow fake Redis). `[Cacheable]` keeps the background write. |
 | `DotCourier.EntityFrameworkCore` | `cfg.AddEntityFrameworkTransactions<TDbContext>(o => ...)`: `TransactionBehavior` (-800, inside retry so each attempt gets its own transaction) wraps `ICommand<>` + `[Transactional]` (or everything with `AllRequests`), minus `[NotTransactional]` (attributes in **core**). Joins an existing `CurrentTransaction` (nested commands). Runs through `CreateExecutionStrategy()` so `EnableRetryOnFailure` works. Rolls back on exception **and** on `IResponseStatus { IsSuccess: false }`, then `ChangeTracker.Clear()` (pinned by a retry test). Scoped `ICourierTransaction.OnCommittedAsync` queues actions while active, runs them after the strategy returns, logs (never rethrows) their failures. References EF Core **8** (Relational) so net8 apps are not forced up. Tests: SQLite in-memory with shared cache (needed for `ReadUncommitted`); test handlers resolve `ShopDb` via `IServiceProvider` because every test host scans the assembly with `ValidateOnBuild`. |
+| `DotCourier.Outbox.EntityFrameworkCore` | `cfg.AddOutbox<TDbContext>(o => ...)` + `modelBuilder.AddCourierOutbox()` (the user's migrations create the table; no DDL files). `IOutbox.Add` tracks an `OutboxMessage` saved by the user's `SaveChangesAsync`; `PublishAsync` also saves. `OutboxProcessor<T>` (`BackgroundService`, also a singleton so tests call `ProcessOnceAsync`): reclaims `Processing` rows older than `ProcessingTimeout`, takes `BatchSize` pending oldest first, claims each by saving `Status` (the **concurrency token**; deliberately not `ExecuteUpdate`, whose signature changed in EF 10 and would break binary compatibility with an EF 8-built package), dispatches in its own scope, marks `Processed` or `Attempts++`/`Failed` with the exception chain in `LastError`. Default `IOutboxDispatcher` publishes with the core's `SequentialThenThrow` (the default `Sequential` swallows handler failures, so nothing would ever be retried; pinned by a test). `OutboxSignal` wakes the processor on commit (`ICourierTransaction.OnCommittedAsync`) or, outside a command, on `SavedChanges`. Type names are assembly-qualified **without version** and must implement `INotification` before deserializing (DB content is untrusted). Dates are UTC `DateTime` (SQLite cannot compare `DateTimeOffset`). |
 | `DotCourier.Resilience` | `cfg.AddResilience(o => ...)`: Polly pipelines cached per (request type, strategy) in a singleton; rejections thrown as `CourierException` subclasses (`CircuitOpenException` 503, `RateLimitExceededException` 429, `BulkheadRejectedException` 503). Only the breaker is on by default. Breaker outside retry and bulkhead inside retry are pinned by tests. |
 
 ## Key mechanics
@@ -135,5 +137,5 @@ Docs come in EN + pt-BR pairs; update both.
 | `spring-courier-resilience` + core `RetryBehavior` | `DotCourier.Resilience` (Polly v8) ✅ |
 | `spring-courier-cache-redis` + core cache/idempotency | `DotCourier.Caching` (`HybridCache`/`IDistributedCache`) ✅ |
 | `TransactionBehavior` | `DotCourier.EntityFrameworkCore` ✅ |
-| `spring-courier-outbox` | `DotCourier.Outbox.EntityFrameworkCore` |
+| `spring-courier-outbox` | `DotCourier.Outbox.EntityFrameworkCore` ✅ |
 | `spring-courier-messaging` | `DotCourier.Kafka` |

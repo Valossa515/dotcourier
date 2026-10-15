@@ -1,4 +1,5 @@
 using DotCourier.EntityFrameworkCore;
+using DotCourier.Outbox;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -17,8 +18,11 @@ public sealed class ShopDb(DbContextOptions<ShopDb> options) : DbContext(options
 {
     public DbSet<Item> Items => Set<Item>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<Item>().HasIndex(i => i.Name).IsUnique();
+        modelBuilder.AddCourierOutbox();
+    }
 }
 
 /// <summary>A SQLite in-memory database that lives as long as the open connection.</summary>
@@ -41,6 +45,21 @@ internal sealed class TestDatabase : IDisposable
         using var db = new ShopDb(new DbContextOptionsBuilder<ShopDb>().UseSqlite(_connection).Options);
         return db.Items.OrderBy(i => i.Id).Select(i => i.Name).ToArray();
     }
+
+    public OutboxMessage[] OutboxRows()
+    {
+        using var db = new ShopDb(new DbContextOptionsBuilder<ShopDb>().UseSqlite(_connection).Options);
+        return db.Set<OutboxMessage>().AsNoTracking().OrderBy(m => m.CreatedAt).ToArray();
+    }
+
+    public void AddOutboxRow(OutboxMessage message)
+    {
+        using var db = new ShopDb(new DbContextOptionsBuilder<ShopDb>().UseSqlite(_connection).Options);
+        db.Set<OutboxMessage>().Add(message);
+        db.SaveChanges();
+    }
+
+    public SqliteConnection Connection => _connection;
 
     public void Dispose() => _connection.Dispose();
 }

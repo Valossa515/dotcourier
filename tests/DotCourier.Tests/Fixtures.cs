@@ -270,7 +270,7 @@ public sealed class FailingItemCreatedHandler(CallLog log) : INotificationHandle
 {
     public Task Handle(ItemCreated notification, CancellationToken cancellationToken)
     {
-        if (notification.Name == "fail")
+        if (notification.Name is "fail" or "fail twice")
         {
             log.Add("failing");
             throw new InvalidOperationException("handler failed");
@@ -286,7 +286,7 @@ public sealed class LastItemCreatedHandler(CallLog log) : INotificationHandler<I
     public Task Handle(ItemCreated notification, CancellationToken cancellationToken)
     {
         log.Add("last");
-        return Task.CompletedTask;
+        return notification.Name == "fail twice" ? throw new TimeoutException("last failed too") : Task.CompletedTask;
     }
 }
 

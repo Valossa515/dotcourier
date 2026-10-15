@@ -127,7 +127,10 @@ public sealed class RequestTimeoutException : CourierException
     public TimeSpan Timeout { get; }
 }
 
-/// <summary>A notification handler failed under <see cref="NotificationPublishStrategy.StopOnFirstError"/>.</summary>
+/// <summary>
+/// A notification handler failed under <see cref="NotificationPublishStrategy.StopOnFirstError"/> or
+/// <see cref="NotificationPublishStrategy.SequentialThenThrow"/>.
+/// </summary>
 public sealed class NotificationHandlerException : CourierException
 {
     /// <summary>Creates the exception.</summary>
