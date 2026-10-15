@@ -93,6 +93,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.AspNetCore`](https://www.nuget.org/packages/DotCourier.AspNetCore) | `Response<T>.ToResult()` (Minimal APIs) e `ToActionResult()` (MVC) |
 | [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter e bulkhead sobre Polly v8 |
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Roda seus `IValidator<T>` no pipeline; exceções do FluentValidation viram 400 |
+| [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Cache de queries, commands idempotentes e invalidação de cache sobre HybridCache (pronto para Redis) |
 
 Todos os pacotes têm como alvo **net8.0** e **net10.0**.
 
@@ -222,7 +223,9 @@ Menor = mais externo:
 | -2000 | exception handlers (`IRequestExceptionHandler<,,>`) | core |
 | -1900 / -1800 | pré / pós-processadores | core |
 | -1000 | logging | core |
+| -995 | idempotência | Caching |
 | -990 | telemetria | core |
+| -951 / -950 | invalidação de cache / cache | Caching |
 | -900 | validação | core |
 | -870 | rate limiter | Resilience |
 | -860 | circuit breaker | Resilience |
@@ -403,6 +406,57 @@ Erros do cliente (`CourierException` com status abaixo de 500: validação, não
 conflito) não são repetidos nem contados pelo breaker. Mude isso com `o.ShouldHandle`.
 Configuração inválida falha na inicialização, não no primeiro request.
 
+## 🗄️ Cache e idempotência
+
+```bash
+dotnet add package DotCourier.Caching
+```
+
+```csharp
+builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "localhost:6379"); // opcional: camada compartilhada
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddCaching());
+
+[Cacheable(60)]                                   // segundos; omita para o padrão (5 min)
+public sealed record GetProduct(Guid Id) : IQuery<Response<ProductDto>>;
+
+[InvalidatesCache(typeof(GetProduct), typeof(ListProducts))]
+public sealed record UpdatePrice(Guid Id, decimal Price) : ICommand<Response<Unit>>;
+
+[Idempotent]                                      // padrão: lembrado por 1 hora
+public sealed record PlaceOrder(string IdempotencyKey, Cart Cart) : ICommand<Response<OrderDto>>, IIdempotencyKey;
+```
+
+- **`[Cacheable]`** responde requests iguais a partir do cache. Só resultados de sucesso e não
+  nulos são guardados; respostas de erro e exceções nunca.
+- **`[InvalidatesCache]`** remove do cache as queries listadas quando o command dá certo (depois
+  da transação, porque fica por fora dela). `typeof(GetById<>)` remove todos os tipos fechados.
+- **`[Idempotent]`** executa um command uma vez só: repetições recebem o resultado registrado, e
+  **duplicatas simultâneas esperam a primeira execução** em vez de rodarem em paralelo. Falhas
+  não são registradas, então uma nova tentativa executa de novo. Implemente `IIdempotencyKey`
+  para usar como chave um header `Idempotency-Key` enviado pelo cliente, em vez do conteúdo do request.
+- **`ICourierCache`** remove por código: `InvalidateAsync<GetProduct>()`, `InvalidateAsync(request)`,
+  `InvalidateAllAsync()`, `ForgetIdempotentResultAsync(request)`.
+
+O armazenamento é o **HybridCache** da Microsoft: memória em cada instância, mais qualquer
+`IDistributedCache` registrado (Redis, SQL Server, ...) como camada compartilhada, então um
+resultado calculado numa instância é reaproveitado pelas outras. O `AddDistributedMemoryCache()`
+**não** conta como camada compartilhada (o HybridCache o ignora, já que ele também fica em memória).
+
+A chave vem do request **serializado em JSON** (com hash), não do `ToString()`: o `ToString()` de
+um record imprime o tipo de uma lista, não os itens, e dois requests diferentes dividiriam a mesma
+entrada. Implemente `ICacheKey` para escolher a chave você mesmo. Os resultados guardados precisam
+ser serializáveis com System.Text.Json.
+
+| Opção (`AddCaching(o => ...)`) | Padrão | |
+|---|---|---|
+| `DefaultCacheDuration` | 5 min | para `[Cacheable]` sem segundos |
+| `DefaultIdempotencyDuration` | 1 h | para `[Idempotent]` sem segundos |
+| `CacheAllQueries` | `false` | guarda toda `IQuery<T>` (comportamento do Spring Courier) |
+| `LocalCacheDuration` | duração da entrada | limita a cópia em memória; com várias instâncias, a remoção limpa a camada compartilhada, mas as outras instâncias mantêm a cópia em memória até isso expirar |
+| `KeyPrefix` | `dotcourier` | para dividir um servidor de cache entre aplicações |
+
 ## ⏱️ Timeouts
 
 ```csharp
@@ -444,6 +498,8 @@ builder.Services.AddOpenTelemetry()
 | Histogram (s) | `courier.request.duration` | as mesmas acima |
 | Counter | `courier.resilience.rejected` | `courier.request.type`, `courier.resilience.strategy` |
 | Counter | `courier.retry.attempts` | `courier.request.type` |
+| Counter | `courier.cache.hits` / `courier.cache.misses` | `courier.request.type` |
+| Counter | `courier.idempotency.hits` / `courier.idempotency.misses` | `courier.request.type` |
 
 ## 🔀 Migrando do MediatR
 
@@ -471,6 +527,7 @@ Diferenças para ficar de olho:
 | FluentValidation no pipeline | ❌ você escreve o behavior | ✅ `DotCourier.FluentValidation` |
 | Handlers de request genéricos (`Create<T>`) | opt-in, fechados na inicialização | ✅ fechados no primeiro dispatch |
 | Retry / circuit breaker / rate limit / bulkhead | ❌ | ✅ `DotCourier.Resilience` |
+| Cache de queries / commands idempotentes | ❌ | ✅ `DotCourier.Caching` |
 | Exceções → `Response<T>` com status code | ❌ | ✅ `Dispatch` |
 | Ordem explícita de behaviors | ordem de registro | ✅ `BehaviorOrder` |
 | Requests de streaming | ✅ | 🔜 |
@@ -485,7 +542,7 @@ Cada módulo do [Spring Courier](https://github.com/Valossa515/spring-courier) g
 - [x] Integração com FluentValidation
 - [x] Requests genéricos e handlers genéricos abertos
 - [x] Atalhos de status e códigos de erro
-- [ ] Cache e idempotência: `HybridCache` / `IDistributedCache` (Redis incluso)
+- [x] Cache e idempotência: `HybridCache` / `IDistributedCache` (Redis incluso)
 - [ ] Transações: behavior para EF Core / `TransactionScope`
 - [ ] Transactional outbox com EF Core
 - [ ] Entrega do outbox para Kafka

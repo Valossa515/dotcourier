@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\DotCourier.AspNetCore\DotCourier.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Resilience\DotCourier.Resilience.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.FluentValidation\DotCourier.FluentValidation.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.Caching\DotCourier.Caching.csproj" />
   </ItemGroup>
 
 </Project>

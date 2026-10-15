@@ -24,13 +24,16 @@ public static class BehaviorOrder
     /// <summary>Logging behavior.</summary>
     public const int Logging = -1000;
 
-    /// <summary>Idempotency behavior (reserved).</summary>
+    /// <summary>Idempotency behavior for <see cref="IdempotentAttribute"/> requests.</summary>
     public const int Idempotency = -995;
 
     /// <summary>Tracing and metrics behavior.</summary>
     public const int Telemetry = -990;
 
-    /// <summary>Caching behavior (reserved).</summary>
+    /// <summary>Evicts caches listed by <see cref="InvalidatesCacheAttribute"/> after a successful request; outside transactions, so it runs after commit.</summary>
+    public const int CacheInvalidation = -951;
+
+    /// <summary>Caching behavior for <see cref="CacheableAttribute"/> requests.</summary>
     public const int Caching = -950;
 
     /// <summary>Validation behavior.</summary>

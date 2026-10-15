@@ -43,7 +43,11 @@ public sealed class CallLog
 
 internal static class TestHost
 {
-    public static (ServiceProvider Services, CallLog Log) Build(Action<CourierConfiguration>? configure = null, CapturingLoggerProvider? logs = null)
+    public static (ServiceProvider Services, CallLog Log) Build(
+        Action<CourierConfiguration>? configure = null,
+        CapturingLoggerProvider? logs = null,
+        Action<IServiceCollection>? registerServices = null,
+        CallLog? sharedLog = null)
     {
         var services = new ServiceCollection();
         services.AddLogging(logging =>
@@ -53,8 +57,9 @@ internal static class TestHost
                 logging.SetMinimumLevel(LogLevel.Trace).AddProvider(logs);
             }
         });
-        var log = new CallLog();
+        var log = sharedLog ?? new CallLog();
         services.AddSingleton(log);
+        registerServices?.Invoke(services);
         services.AddCourier(cfg =>
         {
             cfg.RegisterServicesFromAssemblyContaining<CallLog>();
