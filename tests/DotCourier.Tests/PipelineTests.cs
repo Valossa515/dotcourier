@@ -114,7 +114,7 @@ public class PipelineTests
     {
         var (services, _) = TestHost.Build();
 
-        Assert.Equal("done", await services.Courier().Send(new Slow(1)));
+        Assert.Equal("done", await services.Courier().Send(new Relaxed()));
     }
 
     [Fact]

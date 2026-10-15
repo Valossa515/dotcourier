@@ -71,6 +71,7 @@ src/DotCourier.AspNetCore/   Response<T> → IResult / IActionResult
 src/DotCourier.Resilience/   behaviors baseados em Polly
 src/DotCourier.FluentValidation/  IValidator<T> no pipeline
 src/DotCourier.Caching/      cache / idempotência sobre HybridCache
+src/DotCourier.EntityFrameworkCore/  transação do EF Core por command
 tests/DotCourier.Tests/      xUnit, roda em net8.0 e net10.0
 assets/                      logo, ícone e imagens do README
 ```

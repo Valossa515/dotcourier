@@ -94,6 +94,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter e bulkhead sobre Polly v8 |
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Roda seus `IValidator<T>` no pipeline; exceções do FluentValidation viram 400 |
 | [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Cache de queries, commands idempotentes e invalidação de cache sobre HybridCache (pronto para Redis) |
+| [`DotCourier.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.EntityFrameworkCore) | Todo command numa transação do EF Core (commit / rollback), com efeitos colaterais pós-commit |
 
 Todos os pacotes têm como alvo **net8.0** e **net10.0**.
 
@@ -500,6 +501,58 @@ ser serializáveis com System.Text.Json.
 | `LocalCacheDuration` | duração da entrada | limita a cópia em memória; com várias instâncias, a remoção limpa a camada compartilhada, mas as outras instâncias mantêm a cópia em memória até isso expirar |
 | `KeyPrefix` | `dotcourier` | para dividir um servidor de cache entre aplicações |
 
+## 💾 Transações (EF Core)
+
+```bash
+dotnet add package DotCourier.EntityFrameworkCore
+```
+
+```csharp
+builder.Services.AddDbContext<StoreDbContext>(o => o.UseSqlServer(connectionString));
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddEntityFrameworkTransactions<StoreDbContext>());
+```
+
+Todo **command** passa a rodar numa transação: faz **commit** quando o handler dá certo e
+**rollback** quando o handler lança exceção *ou* devolve um `Response<T>` de erro (um `409 Conflict`
+depois do `SaveChangesAsync` desfaz o que foi salvo). Queries não são envolvidas. Os handlers
+continuam chamando `SaveChangesAsync` normalmente; nada fica gravado de vez até o command terminar.
+
+```csharp
+public sealed class PlaceOrderHandler(StoreDbContext db, ICourierTransaction tx, IEmailSender email)
+    : ICommandHandler<PlaceOrder, Response<OrderDto>>
+{
+    public async Task<Response<OrderDto>> Handle(PlaceOrder command, CancellationToken ct)
+    {
+        var order = Order.Place(command.Customer, command.Lines);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
+
+        // Só roda depois do commit, e nunca se o command fizer rollback.
+        await tx.OnCommittedAsync(t => email.SendConfirmation(order.Id, t), ct);
+        return Response.Created(OrderDto.From(order));
+    }
+}
+```
+
+- **Commands aninhados** (enviados de dentro de um handler) entram na transação de fora: um commit
+  no fim, ou um rollback de tudo.
+- **`ICourierTransaction.OnCommittedAsync`** é o `afterCommit` do Spring: e-mails, mensagens e outros
+  efeitos colaterais esperam o commit e são descartados no rollback. Fora de uma transação rodam na
+  hora. Uma ação que falha é logada; ela não desfaz o commit.
+- O **retry** fica fora da transação, então cada tentativa ganha uma nova. O rollback também
+  **limpa o change tracker** (como o JPA desanexando o contexto de persistência), para a próxima
+  tentativa não salvar de novo as entidades da tentativa que falhou.
+- Funciona com `EnableRetryOnFailure`: a transação roda pela execution strategy do contexto.
+- `[NotTransactional]` deixa um command de fora (por exemplo, um que só chama uma API externa);
+  `[Transactional]` inclui um `IRequest<T>` comum. Os dois ficam no pacote core.
+
+| Opção (`AddEntityFrameworkTransactions<T>(o => ...)`) | Padrão | |
+|---|---|---|
+| `IsolationLevel` | o padrão do provider | por exemplo `IsolationLevel.Serializable` |
+| `AllRequests` | `false` | envolve todo request, para apps que modelam escrita como `IRequest<T>` comum (estilo MediatR) |
+
 ## ⏱️ Timeouts
 
 ```csharp
@@ -571,6 +624,7 @@ Diferenças para ficar de olho:
 | Handlers de request genéricos (`Create<T>`) | opt-in, fechados na inicialização | ✅ fechados no primeiro dispatch |
 | Retry / circuit breaker / rate limit / bulkhead | ❌ | ✅ `DotCourier.Resilience` |
 | Cache de queries / commands idempotentes | ❌ | ✅ `DotCourier.Caching` |
+| Transação por command + ações pós-commit | ❌ você escreve o behavior | ✅ `DotCourier.EntityFrameworkCore` |
 | Exceções → `Response<T>` com status code | ❌ | ✅ `Dispatch` |
 | Ordem explícita de behaviors | ordem de registro | ✅ `BehaviorOrder` |
 | Requests de streaming | ✅ | 🔜 |
@@ -586,7 +640,7 @@ Cada módulo do [Spring Courier](https://github.com/Valossa515/spring-courier) g
 - [x] Requests genéricos e handlers genéricos abertos
 - [x] Atalhos de status e códigos de erro
 - [x] Cache e idempotência: `HybridCache` / `IDistributedCache` (Redis incluso)
-- [ ] Transações: behavior para EF Core / `TransactionScope`
+- [x] Transações: EF Core, com ações pós-commit
 - [ ] Transactional outbox com EF Core
 - [ ] Entrega do outbox para Kafka
 - [ ] Requests de streaming

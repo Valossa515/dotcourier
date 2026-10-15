@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -24,6 +25,7 @@
     <ProjectReference Include="..\..\src\DotCourier.Resilience\DotCourier.Resilience.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.FluentValidation\DotCourier.FluentValidation.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Caching\DotCourier.Caching.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.EntityFrameworkCore\DotCourier.EntityFrameworkCore.csproj" />
   </ItemGroup>
 
 </Project>

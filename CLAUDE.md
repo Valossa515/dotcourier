@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.5.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.6.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -46,7 +46,8 @@ dotcourier/
 │   ├── DotCourier.AspNetCore/   # Response<T>.ToResult() / ToActionResult()
 │   ├── DotCourier.Resilience/   # retry / circuit breaker / rate limiter / bulkhead on Polly v8
 │   ├── DotCourier.FluentValidation/ # IValidator<T> in the validation step + exception translation
-│   └── DotCourier.Caching/      # [Cacheable]/[Idempotent]/[InvalidatesCache] on HybridCache
+│   ├── DotCourier.Caching/      # [Cacheable]/[Idempotent]/[InvalidatesCache] on HybridCache
+│   └── DotCourier.EntityFrameworkCore/ # transaction per command + ICourierTransaction (after commit)
 ├── tests/DotCourier.Tests/      # xUnit, runs on net8.0 and net10.0 (Resilience/ subfolder per module)
 ├── assets/                      # logo + icon (SVG sources, PNGs rendered from them), before-after.svg
 ├── .github/                     # CI, NuGet publish, dependabot, issue/PR templates
@@ -61,6 +62,7 @@ dotcourier/
 | `DotCourier.AspNetCore` | `Response<T>` → `IResult` / `IActionResult` |
 | `DotCourier.FluentValidation` | `cfg.AddFluentValidation()`: registers an open `IRequestValidator<>` adapter over `IValidator<T>` (merged into the core validation 400) and scans validators; an innermost (`int.MaxValue`) behavior turns FluentValidation's exception into DotCourier's `ValidationException` so retry never repeats an invalid request (pinned by a test). |
 | `DotCourier.Caching` | `cfg.AddCaching(o => ...)`: attributes live in **core** (no dependency) so contracts can be annotated. Behaviors: idempotency (-995), cache invalidation (-951, outside transactions → after commit), caching (-950). Storage is `HybridCache` (pinned to 9.x so net8 apps stay on Microsoft.Extensions 9.0); any registered `IDistributedCache` becomes L2 (but HybridCache ignores `MemoryDistributedCache`). Keys hash the request serialized as JSON (record `ToString()` collides on collections; pinned by a test). Non-successful/null results are carried out of the factory in an internal `SkipCacheException` so they are never stored; stampede protection gives in-process dedupe for concurrent idempotent duplicates. |
+| `DotCourier.EntityFrameworkCore` | `cfg.AddEntityFrameworkTransactions<TDbContext>(o => ...)`: `TransactionBehavior` (-800, inside retry so each attempt gets its own transaction) wraps `ICommand<>` + `[Transactional]` (or everything with `AllRequests`), minus `[NotTransactional]` (attributes in **core**). Joins an existing `CurrentTransaction` (nested commands). Runs through `CreateExecutionStrategy()` so `EnableRetryOnFailure` works. Rolls back on exception **and** on `IResponseStatus { IsSuccess: false }`, then `ChangeTracker.Clear()` (pinned by a retry test). Scoped `ICourierTransaction.OnCommittedAsync` queues actions while active, runs them after the strategy returns, logs (never rethrows) their failures. References EF Core **8** (Relational) so net8 apps are not forced up. Tests: SQLite in-memory with shared cache (needed for `ReadUncommitted`); test handlers resolve `ShopDb` via `IServiceProvider` because every test host scans the assembly with `ValidateOnBuild`. |
 | `DotCourier.Resilience` | `cfg.AddResilience(o => ...)`: Polly pipelines cached per (request type, strategy) in a singleton; rejections thrown as `CourierException` subclasses (`CircuitOpenException` 503, `RateLimitExceededException` 429, `BulkheadRejectedException` 503). Only the breaker is on by default. Breaker outside retry and bulkhead inside retry are pinned by tests. |
 
 ## Key mechanics
@@ -132,6 +134,6 @@ Docs come in EN + pt-BR pairs; update both.
 |---|---|
 | `spring-courier-resilience` + core `RetryBehavior` | `DotCourier.Resilience` (Polly v8) ✅ |
 | `spring-courier-cache-redis` + core cache/idempotency | `DotCourier.Caching` (`HybridCache`/`IDistributedCache`) ✅ |
-| `TransactionBehavior` | `DotCourier.EntityFrameworkCore` |
+| `TransactionBehavior` | `DotCourier.EntityFrameworkCore` ✅ |
 | `spring-courier-outbox` | `DotCourier.Outbox.EntityFrameworkCore` |
 | `spring-courier-messaging` | `DotCourier.Kafka` |
