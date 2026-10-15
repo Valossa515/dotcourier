@@ -93,6 +93,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.AspNetCore`](https://www.nuget.org/packages/DotCourier.AspNetCore) | `Response<T>.ToResult()` (Minimal APIs) and `ToActionResult()` (MVC) |
 | [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter and bulkhead on Polly v8 |
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Runs your `IValidator<T>` in the pipeline; FluentValidation exceptions become 400 |
+| [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Query caching, idempotent commands and cache invalidation on HybridCache (Redis-ready) |
 
 All packages target **net8.0** and **net10.0**.
 
@@ -221,7 +222,9 @@ Behaviors are placed by an explicit **order**, not by registration accident. Low
 | -2000 | exception handlers (`IRequestExceptionHandler<,,>`) | core |
 | -1900 / -1800 | pre / post processors | core |
 | -1000 | logging | core |
+| -995 | idempotency | Caching |
 | -990 | telemetry | core |
+| -951 / -950 | cache invalidation / caching | Caching |
 | -900 | validation | core |
 | -870 | rate limiter | Resilience |
 | -860 | circuit breaker | Resilience |
@@ -400,6 +403,57 @@ Client errors (`CourierException` with a status below 500: validation, not found
 neither retried nor counted by the breaker. Override with `o.ShouldHandle`. Invalid settings throw
 at startup, not on the first request.
 
+## 🗄️ Caching and idempotency
+
+```bash
+dotnet add package DotCourier.Caching
+```
+
+```csharp
+builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "localhost:6379"); // optional: shared L2
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddCaching());
+
+[Cacheable(60)]                                   // seconds; omit for the default (5 min)
+public sealed record GetProduct(Guid Id) : IQuery<Response<ProductDto>>;
+
+[InvalidatesCache(typeof(GetProduct), typeof(ListProducts))]
+public sealed record UpdatePrice(Guid Id, decimal Price) : ICommand<Response<Unit>>;
+
+[Idempotent]                                      // default: remembered for 1 hour
+public sealed record PlaceOrder(string IdempotencyKey, Cart Cart) : ICommand<Response<OrderDto>>, IIdempotencyKey;
+```
+
+- **`[Cacheable]`** serves equal requests from the cache. Only successful, non-null results are
+  stored; error responses and exceptions never are.
+- **`[InvalidatesCache]`** evicts the listed queries once the command succeeds (after the
+  transaction, since it sits outside it). `typeof(GetById<>)` evicts every closed type.
+- **`[Idempotent]`** runs a command once: repeats get the recorded result, and **concurrent
+  duplicates wait for the first execution** instead of running in parallel. Failures are not
+  recorded, so a retry runs again. Implement `IIdempotencyKey` to key it by a client-provided
+  `Idempotency-Key` header instead of the request content.
+- **`ICourierCache`** evicts from code: `InvalidateAsync<GetProduct>()`, `InvalidateAsync(request)`,
+  `InvalidateAllAsync()`, `ForgetIdempotentResultAsync(request)`.
+
+Storage is Microsoft **HybridCache**: in-memory per instance, plus any registered
+`IDistributedCache` (Redis, SQL Server, ...) as a shared second level, so a result computed on one
+instance is reused by the others. `AddDistributedMemoryCache()` does **not** count as a shared level
+(HybridCache ignores it, being in-process anyway).
+
+Keys come from the request **serialized as JSON** (hashed), not from `ToString()`: a record's
+`ToString()` prints a list's type rather than its items, so two different requests would share an
+entry. Implement `ICacheKey` to choose the key yourself. Cached results must be serializable with
+System.Text.Json.
+
+| Option (`AddCaching(o => ...)`) | Default | |
+|---|---|---|
+| `DefaultCacheDuration` | 5 min | for `[Cacheable]` without seconds |
+| `DefaultIdempotencyDuration` | 1 h | for `[Idempotent]` without seconds |
+| `CacheAllQueries` | `false` | cache every `IQuery<T>` (Spring Courier's behavior) |
+| `LocalCacheDuration` | entry duration | caps the in-memory copy; with several instances, an eviction clears the shared level but other instances keep their memory copy until this expires |
+| `KeyPrefix` | `dotcourier` | to share one cache server between apps |
+
 ## ⏱️ Timeouts
 
 ```csharp
@@ -441,6 +495,8 @@ builder.Services.AddOpenTelemetry()
 | Histogram (s) | `courier.request.duration` | same as above |
 | Counter | `courier.resilience.rejected` | `courier.request.type`, `courier.resilience.strategy` |
 | Counter | `courier.retry.attempts` | `courier.request.type` |
+| Counter | `courier.cache.hits` / `courier.cache.misses` | `courier.request.type` |
+| Counter | `courier.idempotency.hits` / `courier.idempotency.misses` | `courier.request.type` |
 
 ## 🔀 Migrating from MediatR
 
@@ -468,6 +524,7 @@ Differences to watch for:
 | FluentValidation in the pipeline | ❌ write your own behavior | ✅ `DotCourier.FluentValidation` |
 | Generic request handlers (`Create<T>`) | opt-in, closed at startup | ✅ closed on first dispatch |
 | Retry / circuit breaker / rate limit / bulkhead | ❌ | ✅ `DotCourier.Resilience` |
+| Query caching / idempotent commands | ❌ | ✅ `DotCourier.Caching` |
 | Exceptions → status-coded `Response<T>` | ❌ | ✅ `Dispatch` |
 | Explicit behavior ordering | registration order | ✅ `BehaviorOrder` |
 | Streaming requests | ✅ | 🔜 |
@@ -482,7 +539,7 @@ Each [Spring Courier](https://github.com/Valossa515/spring-courier) module gets 
 - [x] FluentValidation integration
 - [x] Generic requests and open generic handlers
 - [x] Status helpers and machine-readable error codes
-- [ ] Caching and idempotency: `HybridCache` / `IDistributedCache` (Redis included)
+- [x] Caching and idempotency: `HybridCache` / `IDistributedCache` (Redis included)
 - [ ] Transactions: EF Core / `TransactionScope` behavior
 - [ ] Transactional outbox with EF Core
 - [ ] Outbox delivery to Kafka
