@@ -4,6 +4,7 @@
     <PackageId>DotCourier.AspNetCore</PackageId>
     <Description>ASP.NET Core integration for DotCourier: turn a Response&lt;T&gt; into an IResult (Minimal APIs) or IActionResult (MVC) carrying its status code.</Description>
     <RootNamespace>DotCourier</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>

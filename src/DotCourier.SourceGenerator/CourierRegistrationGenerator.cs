@@ -65,19 +65,15 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
         });
     }
 
-    /// <summary>Classes (and record classes) with a base list: a handler always names an interface or a base class.</summary>
-    private static bool IsCandidate(SyntaxNode node) => node switch
-    {
-        ClassDeclarationSyntax { BaseList: not null } => true,
-        RecordDeclarationSyntax { BaseList: not null } record => !record.ClassOrStructKeyword.IsKind(SyntaxKind.StructKeyword),
-        _ => false,
-    };
+    /// <summary>Types with a base list: a handler, behavior or notification always names an interface or a base class.</summary>
+    private static bool IsCandidate(SyntaxNode node) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax
+        && ((TypeDeclarationSyntax)node).BaseList is not null;
 
     internal static HandlerType? Describe(GeneratorSyntaxContext syntax, CancellationToken cancellationToken)
     {
         if (syntax.SemanticModel.GetDeclaredSymbol(syntax.Node, cancellationToken) is not INamedTypeSymbol type
             || type.IsAbstract
-            || type.TypeKind != TypeKind.Class)
+            || type.TypeKind is not (TypeKind.Class or TypeKind.Struct))
         {
             return null;
         }
@@ -94,9 +90,28 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
         var compilation = syntax.SemanticModel.Compilation;
         var open = type.TypeParameters.Length > 0;
         var registrations = ImmutableArray.CreateBuilder<Registration>();
-        var accessible = compilation.IsSymbolAccessibleWithin(type, compilation.Assembly);
+        var reachable = compilation.IsSymbolAccessibleWithin(type, compilation.Assembly);
+        var accessible = reachable;
         var handlerName = type.ToDisplayString(FullyQualified);
 
+        // Extras for compile-time mode; skipped silently when generated code cannot reach the type,
+        // since the reflection scan does not register them either.
+        if (reachable && !open && type.AllInterfaces.Any(i => IsCourier(i, "INotification")))
+        {
+            registrations.Add(new Registration(RegistrationKind.Notification, new EquatableArray<string>(ImmutableArray.Create(handlerName)), string.Empty));
+        }
+
+        if (reachable && open && ClosedBehavior(type) is { } behavior)
+        {
+            registrations.Add(behavior);
+        }
+
+        if (type.TypeKind != TypeKind.Class)
+        {
+            return registrations.Count == 0 ? null : new HandlerType(NameOf(type), open, true, new EquatableArray<Registration>(registrations.ToImmutable()), LocationInfo.From(type.Locations.FirstOrDefault()));
+        }
+
+        var handlerKinds = 0;
         foreach (var @interface in type.AllInterfaces)
         {
             var kind = KindOf(@interface);
@@ -105,11 +120,10 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
                 continue;
             }
 
+            handlerKinds++;
             if (open)
             {
-                // The runtime applies the scan's rules for open generics; only the type is needed.
-                registrations.Add(new Registration(kind.Value, default, string.Empty));
-                continue;
+                continue; // the runtime applies the scan's rules for open generics: only the type is needed
             }
 
             accessible &= @interface.TypeArguments.All(argument => compilation.IsSymbolAccessibleWithin(argument, compilation.Assembly));
@@ -124,6 +138,11 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
             registrations.Add(new Registration(kind.Value, new EquatableArray<string>(arguments.ToImmutableArray()), serviceKey));
         }
 
+        if (open && handlerKinds > 0)
+        {
+            registrations.Add(new Registration(RegistrationKind.Service, default, "open"));
+        }
+
         if (registrations.Count == 0)
         {
             return null;
@@ -132,10 +151,56 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
         return new HandlerType(
             NameOf(type),
             open,
-            accessible,
-            new EquatableArray<Registration>(open ? ImmutableArray.Create(registrations[0]) : registrations.ToImmutable()),
+            accessible || handlerKinds == 0,
+            new EquatableArray<Registration>(registrations.ToImmutable()),
             LocationInfo.From(type.Locations.FirstOrDefault()));
     }
+
+    private static bool IsCourier(INamedTypeSymbol @interface, string metadataName) =>
+        @interface.OriginalDefinition.MetadataName == metadataName
+        && @interface.OriginalDefinition.ContainingNamespace?.ToDisplayString() == "DotCourier";
+
+    /// <summary>
+    /// For an open behavior whose two type parameters are exactly the behavior interface's (in any order) and
+    /// carry no constraint but <c>notnull</c>: <c>typeof(B&lt;,&gt;)</c> and <c>B&lt;TRequest, TResponse&gt;</c>, which
+    /// the generated <c>BehaviorTypes</c> can name inside its generic method.
+    /// </summary>
+    private static Registration? ClosedBehavior(INamedTypeSymbol type)
+    {
+        foreach (var @interface in type.AllInterfaces)
+        {
+            var kind = IsCourier(@interface, "IPipelineBehavior`2") ? RegistrationKind.RequestBehavior
+                : IsCourier(@interface, "IStreamPipelineBehavior`2") ? RegistrationKind.StreamBehavior
+                : (RegistrationKind?)null;
+            if (kind is null
+                || type.TypeParameters.Length != 2
+                || @interface.TypeArguments[0] is not ITypeParameterSymbol request
+                || @interface.TypeArguments[1] is not ITypeParameterSymbol response
+                || SymbolEqualityComparer.Default.Equals(request, response)
+                || !type.TypeParameters.Contains(request, SymbolEqualityComparer.Default)
+                || !type.TypeParameters.Contains(response, SymbolEqualityComparer.Default)
+                || type.TypeParameters.Any(HasConstraintBeyondNotNull))
+            {
+                continue;
+            }
+
+            var arguments = type.TypeParameters.Select(p => SymbolEqualityComparer.Default.Equals(p, request) ? "TRequest" : "TResponse");
+            var name = type.ToDisplayString(FullyQualifiedWithoutGenerics);
+            return new Registration(
+                kind.Value,
+                new EquatableArray<string>(ImmutableArray.Create(name + "<,>", name + "<" + string.Join(", ", arguments) + ">")),
+                string.Empty);
+        }
+
+        return null;
+    }
+
+    private static bool HasConstraintBeyondNotNull(ITypeParameterSymbol parameter) =>
+        parameter.HasReferenceTypeConstraint
+        || parameter.HasValueTypeConstraint
+        || parameter.HasUnmanagedTypeConstraint
+        || parameter.HasConstructorConstraint
+        || parameter.ConstraintTypes.Length > 0;
 
     /// <summary>How generated code names the type: <c>global::Ns.Handler</c>, or <c>global::Ns.Handler&lt;,&gt;</c> when open.</summary>
     /// <remarks>
@@ -205,7 +270,8 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
             "IRequestHandler`2" => RegistrationKind.RequestHandler,
             "IStreamRequestHandler`2" => RegistrationKind.StreamHandler,
             "INotificationHandler`1" => RegistrationKind.NotificationHandler,
-            "IRequestPreProcessor`1" or "IRequestPostProcessor`2" or "IRequestExceptionHandler`3" or "IRequestValidator`1" => RegistrationKind.Service,
+            "IRequestExceptionHandler`3" => RegistrationKind.ExceptionHandler,
+            "IRequestPreProcessor`1" or "IRequestPostProcessor`2" or "IRequestValidator`1" => RegistrationKind.Service,
             _ => null,
         };
     }
@@ -231,6 +297,8 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
             .ToList();
 
         var body = new StringBuilder();
+        var requestBehaviors = new List<Registration>();
+        var streamBehaviors = new List<Registration>();
         var inaccessible = types.Where(type => !type.IsAccessible).ToList();
         if (inaccessible.Count > 0)
         {
@@ -246,16 +314,29 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
             ReportDuplicates(output, types);
             foreach (var type in types)
             {
-                if (type.IsOpenGeneric)
-                {
-                    body.AppendLine($"            context.OpenGeneric(typeof({type.Name}));");
-                    continue;
-                }
-
                 foreach (var registration in type.Registrations)
                 {
-                    body.AppendLine($"            context.{registration.Kind}<{string.Join(", ", registration.TypeArguments)}>();");
+                    switch (registration.Kind)
+                    {
+                        case RegistrationKind.RequestBehavior:
+                            requestBehaviors.Add(registration);
+                            break;
+                        case RegistrationKind.StreamBehavior:
+                            streamBehaviors.Add(registration);
+                            break;
+                        case RegistrationKind.Service when type.IsOpenGeneric:
+                            body.AppendLine($"            context.OpenGeneric(typeof({type.Name}));");
+                            break;
+                        default:
+                            body.AppendLine($"            context.{registration.Kind}<{string.Join(", ", registration.TypeArguments)}>();");
+                            break;
+                    }
                 }
+            }
+
+            if (requestBehaviors.Count + streamBehaviors.Count > 0)
+            {
+                body.AppendLine("            context.BehaviorTypes(new GeneratedBehaviorTypes());");
             }
         }
 
@@ -278,10 +359,63 @@ public sealed class CourierRegistrationGenerator : IIncrementalGenerator
                     {
             {{body.ToString().TrimEnd()}}
                     }
+            {{BehaviorTypesClass(requestBehaviors, streamBehaviors)}}
                 }
             }
 
             """);
+    }
+
+    /// <summary>
+    /// Closes this assembly's open behaviors for compile-time mode (Native AOT), where the container cannot
+    /// close open generics: <c>typeof(B&lt;TRequest, TResponse&gt;)</c> inside a generic method needs no runtime code.
+    /// </summary>
+    private static string BehaviorTypesClass(List<Registration> request, List<Registration> stream)
+    {
+        if (request.Count + stream.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        static string Method(string name, List<Registration> behaviors)
+        {
+            var text = new StringBuilder();
+            text.AppendLine("            [return: global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors)]");
+            text.AppendLine($"            public override global::System.Type {name}<[global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(global::DotCourier.Generated.CompileTimeTypes.Request)] TRequest, TResponse>(global::System.Type openBehavior)");
+            text.AppendLine("            {");
+            foreach (var behavior in behaviors)
+            {
+                text.AppendLine($"                if (openBehavior == typeof({behavior.TypeArguments.Items[0]})) return typeof({behavior.TypeArguments.Items[1]});");
+            }
+
+            text.AppendLine("                return null;");
+            text.Append("            }");
+            return text.ToString();
+        }
+
+        var methods = new List<string>();
+        if (request.Count > 0)
+        {
+            methods.Add(Method("CloseRequestBehavior", request));
+        }
+
+        if (stream.Count > 0)
+        {
+            methods.Add(Method("CloseStreamBehavior", stream));
+        }
+
+        if (request.Count == 0)
+        {
+            methods.Insert(0, "            public override global::System.Type CloseRequestBehavior<[global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(global::DotCourier.Generated.CompileTimeTypes.Request)] TRequest, TResponse>(global::System.Type openBehavior) => null;");
+        }
+
+        return $$"""
+
+                    private sealed class GeneratedBehaviorTypes : global::DotCourier.Generated.BehaviorTypes
+                    {
+            {{string.Join("\n\n", methods)}}
+                    }
+            """;
     }
 
     /// <summary>Like the scan, the first handler of a request wins; say so when that hides another one.</summary>

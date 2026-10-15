@@ -24,7 +24,17 @@ internal enum RegistrationKind
     RequestHandler,
     StreamHandler,
     NotificationHandler,
+    ExceptionHandler,
     Service,
+
+    /// <summary>A notification type: its dispatch wrapper is prepared even without a handler in this assembly.</summary>
+    Notification,
+
+    /// <summary>An open request behavior: <c>TypeArguments</c> = [open typeof, closed with TRequest/TResponse].</summary>
+    RequestBehavior,
+
+    /// <summary>An open stream behavior, same shape as <see cref="RequestBehavior"/>.</summary>
+    StreamBehavior,
 }
 
 internal sealed record LocationInfo(string FilePath, TextSpan Span, LinePositionSpan LineSpan)

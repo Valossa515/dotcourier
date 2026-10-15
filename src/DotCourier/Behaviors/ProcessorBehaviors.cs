@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
+using DotCourier.Generated;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DotCourier.Behaviors;
@@ -45,7 +47,7 @@ public sealed class RequestPostProcessorBehavior<TRequest, TResponse>(IEnumerabl
 /// from the most specific exception type to <see cref="Exception"/>. The first handler that calls
 /// <see cref="RequestExceptionHandlerState{TResponse}.SetHandled"/> supplies the response.
 /// </summary>
-public sealed class RequestExceptionProcessorBehavior<TRequest, TResponse>(IServiceProvider services)
+public sealed class RequestExceptionProcessorBehavior<TRequest, TResponse>(IServiceProvider services, CourierOptions? options = null)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
@@ -61,33 +63,80 @@ public sealed class RequestExceptionProcessorBehavior<TRequest, TResponse>(IServ
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             var state = new RequestExceptionHandlerState<TResponse>();
-            for (var type = exception.GetType(); type is not null && type != typeof(object); type = type.BaseType)
+            if (options?.RequireCompileTimeRegistrations == true)
             {
-                var (handlerType, method) = HandlerTypes.GetOrAdd(type, static exceptionType =>
+                if (await HandleWithInvokers(request, exception, state, cancellationToken).ConfigureAwait(false))
                 {
-                    var closed = typeof(IRequestExceptionHandler<,,>).MakeGenericType(typeof(TRequest), typeof(TResponse), exceptionType);
-                    return (closed, closed.GetMethod(nameof(IRequestExceptionHandler<object, object, Exception>.Handle))!);
-                });
-
-                foreach (var handler in services.GetServices(handlerType))
-                {
-                    try
-                    {
-                        await ((Task)method.Invoke(handler, [request, exception, state, cancellationToken])!).ConfigureAwait(false);
-                    }
-                    catch (TargetInvocationException tie) when (tie.InnerException is not null)
-                    {
-                        ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
-                    }
-
-                    if (state.Handled)
-                    {
-                        return state.Response!;
-                    }
+                    return state.Response!;
                 }
+
+                throw;
+            }
+
+            if (await HandleWithReflection(request, exception, state, cancellationToken).ConfigureAwait(false))
+            {
+                return state.Response!;
             }
 
             throw;
         }
+    }
+
+    /// <summary>Compile-time mode: the typed invokers generated code registered next to each exception handler.</summary>
+    private async Task<bool> HandleWithInvokers(TRequest request, Exception exception, RequestExceptionHandlerState<TResponse> state, CancellationToken cancellationToken)
+    {
+        var invokers = services.GetServices<IExceptionHandlerInvoker<TRequest, TResponse>>().ToArray();
+        for (var type = exception.GetType(); type is not null && type != typeof(object); type = type.BaseType)
+        {
+            foreach (var invoker in invokers)
+            {
+                if (invoker.ExceptionType != type)
+                {
+                    continue;
+                }
+
+                await invoker.Handle(request, exception, state, cancellationToken).ConfigureAwait(false);
+                if (state.Handled)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only reached outside compile-time mode, which is always on under Native AOT.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = "Only reached outside compile-time mode, which is always on under Native AOT.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Only reached outside compile-time mode, which is always on under Native AOT.")]
+    private async Task<bool> HandleWithReflection(TRequest request, Exception exception, RequestExceptionHandlerState<TResponse> state, CancellationToken cancellationToken)
+    {
+        for (var type = exception.GetType(); type is not null && type != typeof(object); type = type.BaseType)
+        {
+            var (handlerType, method) = HandlerTypes.GetOrAdd(type, static exceptionType =>
+            {
+                var closed = typeof(IRequestExceptionHandler<,,>).MakeGenericType(typeof(TRequest), typeof(TResponse), exceptionType);
+                return (closed, closed.GetMethod(nameof(IRequestExceptionHandler<object, object, Exception>.Handle))!);
+            });
+
+            foreach (var handler in services.GetServices(handlerType))
+            {
+                try
+                {
+                    await ((Task)method.Invoke(handler, [request, exception, state, cancellationToken])!).ConfigureAwait(false);
+                }
+                catch (TargetInvocationException tie) when (tie.InnerException is not null)
+                {
+                    ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                }
+
+                if (state.Handled)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

@@ -40,3 +40,24 @@ jobs:
           path: |
             TestResults
             artifacts
+
+  native-aot:
+    # Publishes a console app with Native AOT (any trimming/AOT warning fails the publish) and runs it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Native AOT prerequisites
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish with Native AOT
+        run: dotnet publish tests/DotCourier.AotSmoke -c Release -r linux-x64 -o aot-out
+
+      - name: Run the native binary
+        run: ./aot-out/DotCourier.AotSmoke

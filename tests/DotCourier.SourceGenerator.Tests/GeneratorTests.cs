@@ -268,4 +268,51 @@ public class GeneratorTests
         var ping = Activator.CreateInstance(assembly.GetType("Shop.Ping")!, "hi")!;
         Assert.Equal("pong: hi", await services.GetRequiredService<ICourier>().Send(ping));
     }
+
+    [Fact]
+    public void Emits_what_compile_time_mode_needs()
+    {
+        var (source, diagnostics, output) = Run("""
+            using DotCourier;
+            namespace Shop;
+            public sealed record Ping : IRequest<string>;
+            public sealed class PingHandler : IRequestHandler<Ping, string>
+            {
+                public Task<string> Handle(Ping request, CancellationToken ct) => Task.FromResult("x");
+            }
+            public sealed class PingFallback : IRequestExceptionHandler<Ping, string, InvalidOperationException>
+            {
+                public Task Handle(Ping request, InvalidOperationException exception, RequestExceptionHandlerState<string> state, CancellationToken ct) => Task.CompletedTask;
+            }
+            public sealed record Unheard(int Id) : INotification;
+            public readonly record struct Tick(int N) : INotification;
+            public sealed class Audit<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse> where TRequest : notnull
+            {
+                public Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct) => next(ct);
+            }
+            public sealed class Swapped<TResponse, TRequest> : IPipelineBehavior<TRequest, TResponse> where TRequest : notnull
+            {
+                public Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct) => next(ct);
+            }
+            public sealed class ClassOnly<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse> where TRequest : class
+            {
+                public Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct) => next(ct);
+            }
+            public sealed class StreamAudit<TRequest, TResponse> : IStreamPipelineBehavior<TRequest, TResponse> where TRequest : notnull
+            {
+                public IAsyncEnumerable<TResponse> Handle(TRequest request, StreamHandlerDelegate<TResponse> next, CancellationToken ct) => next();
+            }
+            """);
+
+        Assert.Empty(diagnostics);
+        Assert.Contains("context.ExceptionHandler<global::Shop.Ping, string, global::System.InvalidOperationException, global::Shop.PingFallback>();", source);
+        Assert.Contains("context.Notification<global::Shop.Unheard>();", source);
+        Assert.Contains("context.Notification<global::Shop.Tick>();", source);
+        Assert.Contains("context.BehaviorTypes(new GeneratedBehaviorTypes());", source);
+        Assert.Contains("if (openBehavior == typeof(global::Shop.Audit<,>)) return typeof(global::Shop.Audit<TRequest, TResponse>);", source);
+        Assert.Contains("if (openBehavior == typeof(global::Shop.Swapped<,>)) return typeof(global::Shop.Swapped<TResponse, TRequest>);", source);
+        Assert.Contains("if (openBehavior == typeof(global::Shop.StreamAudit<,>)) return typeof(global::Shop.StreamAudit<TRequest, TResponse>);", source);
+        Assert.DoesNotContain("ClassOnly", source); // its constraint cannot be met from the generic closer
+        AssertCompiles(output);
+    }
 }

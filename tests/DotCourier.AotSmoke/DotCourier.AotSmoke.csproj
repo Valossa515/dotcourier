@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Published with Native AOT by CI and run: proves DotCourier works without runtime code generation.
+    Any trimming or AOT warning fails the publish (TreatWarningsAsErrors).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DotCourier\DotCourier.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.AspNetCore\DotCourier.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.Resilience\DotCourier.Resilience.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.SourceGenerator\DotCourier.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

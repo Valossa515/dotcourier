@@ -11,6 +11,7 @@
     <Project Path="src/DotCourier/DotCourier.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/DotCourier.AotSmoke/DotCourier.AotSmoke.csproj" />
     <Project Path="tests/DotCourier.SourceGenerator.Tests/DotCourier.SourceGenerator.Tests.csproj" />
     <Project Path="tests/DotCourier.Tests/DotCourier.Tests.csproj" />
   </Folder>

@@ -8,8 +8,8 @@ O DotCourier ainda está antes da 1.0: só a minor mais recente recebe correçõ
 
 | Versão | Suportada |
 | ------ | --------- |
-| 0.10.x | ✅ Sim    |
-| < 0.10 | ❌ Não    |
+| 0.11.x | ✅ Sim    |
+| < 0.11 | ❌ Não    |
 
 ## Reportando uma vulnerabilidade
 

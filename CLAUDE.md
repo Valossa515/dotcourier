@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.10.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.11.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -71,6 +71,31 @@ dotcourier/
 | `DotCourier.Resilience` | `cfg.AddResilience(o => ...)`: Polly pipelines cached per (request type, strategy) in a singleton; rejections thrown as `CourierException` subclasses (`CircuitOpenException` 503, `RateLimitExceededException` 429, `BulkheadRejectedException` 503). Only the breaker is on by default. Breaker outside retry and bulkhead inside retry are pinned by tests. |
 
 ## Key mechanics
+
+- **Native AOT / compile-time mode (0.11.0):** `cfg.RequireCompileTimeRegistrations` (default
+  `!RuntimeFeature.IsDynamicCodeSupported`; `PublishAot=true` makes that false even for `dotnet run`) →
+  `CourierOptions.RequireCompileTimeRegistrations`. In that mode:
+  - behaviors are **not** registered as open generics: `ClosedBehaviorRegistration` closes every configured
+    behavior for every `IKnownRequest` (added by generated `RequestHandler`/`StreamHandler` calls), in the
+    same order, asking each `BehaviorTypes` (GVM `CloseRequestBehavior<TReq,TResp>(Type open)` returning
+    `typeof(B<TReq,TResp>)`): `CoreBehaviorTypes`, `ResilienceBehaviorTypes` (via `cfg.AddBehaviorTypes`),
+    and the generator's `GeneratedBehaviorTypes` for open behaviors in the user assembly (only if their
+    type parameters have no constraint beyond `notnull`);
+  - exception handlers go through `IExceptionHandlerInvoker<TReq,TResp>` registered by the generated
+    `context.ExceptionHandler<...>` (no MakeGenericType / MethodInfo.Invoke);
+  - missing wrappers → `HandlerNotFoundException` (streams fail on first read, notifications no-op); the
+    generator emits `context.Notification<T>()` for every notification type so open generic notification
+    handlers still run; `GenericRequestHandlerRegistry` is empty; assemblies without generated
+    registrations throw at startup.
+  `IsAotCompatible` is on for DotCourier, DotCourier.AspNetCore (its `ToResult` writes JSON through
+  `JsonOptions.GetTypeInfo`, never `Results.Json`) and DotCourier.Resilience; every reflection path left is
+  guarded by the mode and suppressed with that justification. Request types carry
+  `[DynamicallyAccessedMembers(CompileTimeTypes.Request)]` (public properties + constructors) through
+  `BehaviorTypes`, `KnownRequest`, the generated context and `ValidationBehavior`, for DataAnnotations.
+  `UnitJsonConverter` is public so STJ source generation can serialize `Response<Unit>`.
+  `tests/DotCourier.AotSmoke` (forces compile-time mode) is published with `PublishAot` and run by the CI job
+  `native-aot` on Ubuntu; locally it runs with `dotnet run` (publishing needs the VS C++ workload on Windows).
+  `CompileTimeModeTests` runs the same scenarios in both modes.
 
 - **Source generator (0.10.0):** `DotCourier.SourceGenerator` emits, per assembly, a module initializer
   that calls `GeneratedCourierRegistry.Register(assembly, register)`; `AddCourier` looks it up with
