@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.4.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.5.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -91,6 +91,13 @@ dotcourier/
   and documented in both READMEs. (Spring Courier does this by method-name convention instead.)
 - **Names:** always use `CourierDiagnostics.GetRequestName(type)` for request types in logs,
   metrics and messages (`Create<Product>`, not ``Create`1``).
+- **Library messages:** every fixed message DotCourier writes (unexpected 500, validation summary,
+  handler not found, timeout, resilience rejections) comes from `CourierMessages` (`cfg.Messages`,
+  copied into the `CourierOptions` singleton). A `CourierMessage` is fixed text or
+  `CourierMessage.From(() => ...)` evaluated at throw time (request culture), with an optional code
+  and `{request}`/`{count}`/`{timeoutMs}` placeholders. Throw sites take `CourierMessages?` (null →
+  `CourierMessages.Default`, the original English texts). Never hardcode a new user-facing message:
+  add it to `CourierMessages`.
 - **Error codes:** `Response<T>.ErrorCode` (JSON `errorCode`, omitted when null) comes from the
   helpers' `code:`, `CourierException.Code` or `ResponseError.Code`; `ValidationError.Code` per field.
 

@@ -27,7 +27,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
 
         if (errors.Count > 0)
         {
-            throw new ValidationException(errors);
+            throw new ValidationException(errors, options?.Messages, typeof(TRequest));
         }
 
         return await next(cancellationToken).ConfigureAwait(false);

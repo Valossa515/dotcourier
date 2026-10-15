@@ -29,6 +29,13 @@ public sealed class CourierConfiguration
     /// <summary>Registers the behavior that enforces <see cref="HandlerTimeoutAttribute"/>. Default <c>true</c>.</summary>
     public bool EnableTimeouts { get; set; } = true;
 
+    /// <summary>
+    /// The fixed messages DotCourier writes into error responses (unexpected error, validation,
+    /// timeout, resilience rejections...). Replace them to translate or add codes, e.g.
+    /// <c>cfg.Messages.UnexpectedError = new("Ocorreu um erro inesperado", code: "000");</c>
+    /// </summary>
+    public CourierMessages Messages { get; set; } = new();
+
     internal List<Assembly> AssembliesToRegister { get; } = [];
 
     /// <summary>

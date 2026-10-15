@@ -8,4 +8,7 @@ public sealed class CourierOptions
 
     /// <summary>Whether the validation behavior evaluates DataAnnotations attributes.</summary>
     public bool UseDataAnnotations { get; init; } = true;
+
+    /// <summary>The fixed messages written into error responses.</summary>
+    public CourierMessages Messages { get; init; } = CourierMessages.Default;
 }

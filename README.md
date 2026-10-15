@@ -203,6 +203,41 @@ clients can branch on it. Exceptions carry one too:
 `throw new CourierException("Out of stock", 409) { Code = "STK-001" };`
 Validation errors have a per-field `code` (FluentValidation's `WithErrorCode` is kept).
 
+### Error messages and translation
+
+DotCourier writes a few messages itself: the generic 500, the validation summary, and timeout and
+resilience rejections. All of them live in `cfg.Messages`, so you can translate them and give them
+codes:
+
+```csharp
+builder.Services.AddCourier(cfg =>
+{
+    cfg.RegisterServicesFromAssemblyContaining<Program>();
+
+    // fixed text, optional code
+    cfg.Messages.UnexpectedError = new("Ocorreu um erro inesperado", code: "000");
+
+    // evaluated on every error, so it follows each request's culture (.resx)
+    cfg.Messages.ValidationFailed = CourierMessage.From(() => Resources.ValidationFailed, code: "VAL-000");
+
+    // placeholders are filled in
+    cfg.Messages.RequestTimeout = "{request} took longer than {timeoutMs} ms";
+});
+```
+
+| Message | Status | Default | Placeholders |
+|---|---|---|---|
+| `UnexpectedError` | 500 | An internal error occurred | |
+| `ValidationFailed` | 400 | Validation failed with {count} error(s) | `{count}`, `{request}` |
+| `HandlerNotFound` | 500 | No handler registered for request type '{request}'. | `{request}` |
+| `RequestTimeout` | 504 | Request '{request}' timed out after {timeoutMs} ms | `{request}`, `{timeoutMs}` |
+| `CircuitOpen` / `BulkheadRejected` | 503 | Service temporarily unavailable / Service busy... | `{request}` |
+| `RateLimitExceeded` | 429 | Too many requests... | `{request}` |
+
+`CourierMessage.From(() => ...)` runs on every error, on the request's own flow, so with ASP.NET
+Core request localization the same `.resx` answers in Portuguese or English per request. Messages
+you write yourself (`Response.NotFound("...")`, `CourierException`) are untouched.
+
 ## 🧩 Pipeline
 
 ```csharp

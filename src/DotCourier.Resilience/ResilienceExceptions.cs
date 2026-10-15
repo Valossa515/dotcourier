@@ -7,11 +7,12 @@ namespace DotCourier.Resilience;
 public sealed class CircuitOpenException : CourierException
 {
     /// <summary>Creates the exception.</summary>
-    public CircuitOpenException(Type requestType, TimeSpan? retryAfter, Exception? innerException = null)
-        : base("Service temporarily unavailable: the circuit is open for this operation", innerException, 503)
+    public CircuitOpenException(Type requestType, TimeSpan? retryAfter, Exception? innerException = null, CourierMessages? messages = null)
+        : base((messages ?? CourierMessages.Default).CircuitOpen.Render(requestType), innerException, 503)
     {
         RequestType = requestType;
         RetryAfter = retryAfter;
+        Code = (messages ?? CourierMessages.Default).CircuitOpen.Code;
     }
 
     /// <summary>The rejected request type.</summary>
@@ -25,11 +26,12 @@ public sealed class CircuitOpenException : CourierException
 public sealed class RateLimitExceededException : CourierException
 {
     /// <summary>Creates the exception.</summary>
-    public RateLimitExceededException(Type requestType, TimeSpan? retryAfter, Exception? innerException = null)
-        : base("Too many requests: the rate limit for this operation is exhausted", innerException, 429)
+    public RateLimitExceededException(Type requestType, TimeSpan? retryAfter, Exception? innerException = null, CourierMessages? messages = null)
+        : base((messages ?? CourierMessages.Default).RateLimitExceeded.Render(requestType), innerException, 429)
     {
         RequestType = requestType;
         RetryAfter = retryAfter;
+        Code = (messages ?? CourierMessages.Default).RateLimitExceeded.Code;
     }
 
     /// <summary>The rejected request type.</summary>
@@ -43,10 +45,11 @@ public sealed class RateLimitExceededException : CourierException
 public sealed class BulkheadRejectedException : CourierException
 {
     /// <summary>Creates the exception.</summary>
-    public BulkheadRejectedException(Type requestType, Exception? innerException = null)
-        : base("Service busy: too many concurrent executions of this operation", innerException, 503)
+    public BulkheadRejectedException(Type requestType, Exception? innerException = null, CourierMessages? messages = null)
+        : base((messages ?? CourierMessages.Default).BulkheadRejected.Render(requestType), innerException, 503)
     {
         RequestType = requestType;
+        Code = (messages ?? CourierMessages.Default).BulkheadRejected.Code;
     }
 
     /// <summary>The rejected request type.</summary>
