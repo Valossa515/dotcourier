@@ -136,6 +136,39 @@ public sealed class CourierConfiguration
         return this;
     }
 
+    /// <summary>
+    /// Adds an open generic stream behavior such as <c>typeof(AuditStreamBehavior&lt;,&gt;)</c> for every
+    /// stream request.
+    /// </summary>
+    /// <param name="openBehaviorType">An open generic type implementing <see cref="IStreamPipelineBehavior{TRequest,TResponse}"/>.</param>
+    /// <param name="order">Position in the stream pipeline; see <see cref="BehaviorOrder"/>.</param>
+    /// <param name="lifetime">Behavior lifetime.</param>
+    public CourierConfiguration AddOpenStreamBehavior(Type openBehaviorType, int order = BehaviorOrder.Default, ServiceLifetime lifetime = ServiceLifetime.Transient)
+    {
+        ArgumentNullException.ThrowIfNull(openBehaviorType);
+        if (!openBehaviorType.IsGenericTypeDefinition)
+        {
+            throw new ArgumentException($"'{openBehaviorType.Name}' must be an open generic type.", nameof(openBehaviorType));
+        }
+
+        if (!openBehaviorType.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamPipelineBehavior<,>)))
+        {
+            throw new ArgumentException($"'{openBehaviorType.Name}' must implement {nameof(IStreamPipelineBehavior<object, object>)}<,>.", nameof(openBehaviorType));
+        }
+
+        _behaviors.Add(new BehaviorRegistration(typeof(IStreamPipelineBehavior<,>), openBehaviorType, order, lifetime));
+        return this;
+    }
+
+    /// <summary>Adds a stream behavior for one closed request/item pair (MediatR's <c>AddStreamBehavior</c>).</summary>
+    public CourierConfiguration AddStreamBehavior<TService, TImplementation>(int order = BehaviorOrder.Default, ServiceLifetime lifetime = ServiceLifetime.Transient)
+        where TImplementation : TService =>
+        AddBehavior(typeof(TService), typeof(TImplementation), order, lifetime);
+
+    /// <summary>Adds a closed stream behavior for <paramref name="serviceType"/> (MediatR's <c>AddStreamBehavior</c>).</summary>
+    public CourierConfiguration AddStreamBehavior(Type serviceType, Type implementationType, int order = BehaviorOrder.Default, ServiceLifetime lifetime = ServiceLifetime.Transient) =>
+        AddBehavior(serviceType, implementationType, order, lifetime);
+
     /// <summary>Adds a closed behavior for <paramref name="serviceType"/>.</summary>
     public CourierConfiguration AddBehavior(Type serviceType, Type implementationType, int order = BehaviorOrder.Default, ServiceLifetime lifetime = ServiceLifetime.Transient)
     {

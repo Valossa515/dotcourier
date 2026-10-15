@@ -18,7 +18,23 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
     /// <inheritdoc />
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
-        var errors = _useDataAnnotations ? DataAnnotationsValidator.Validate(request) : [];
+        await RequestValidation.ThrowIfInvalidAsync(request, validators, _useDataAnnotations, options, cancellationToken).ConfigureAwait(false);
+        return await next(cancellationToken).ConfigureAwait(false);
+    }
+}
+
+/// <summary>The validation shared by requests and streams.</summary>
+internal static class RequestValidation
+{
+    public static async Task ThrowIfInvalidAsync<TRequest>(
+        TRequest request,
+        IEnumerable<IRequestValidator<TRequest>> validators,
+        bool useDataAnnotations,
+        CourierOptions? options,
+        CancellationToken cancellationToken)
+        where TRequest : notnull
+    {
+        var errors = useDataAnnotations ? DataAnnotationsValidator.Validate(request) : [];
 
         foreach (var validator in validators)
         {
@@ -29,7 +45,5 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
         {
             throw new ValidationException(errors, options?.Messages, typeof(TRequest));
         }
-
-        return await next(cancellationToken).ConfigureAwait(false);
     }
 }

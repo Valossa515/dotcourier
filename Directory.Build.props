@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>0.8.0</Version>
+    <Version>0.9.0</Version>
     <Authors>Valossa515</Authors>
     <Copyright>Copyright (c) 2026 Felipe Martins</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

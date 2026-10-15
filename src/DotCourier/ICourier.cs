@@ -13,6 +13,15 @@ public interface ISender
 
     /// <summary>Sends a request whose type is only known at runtime.</summary>
     Task<object?> Send(object request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends a stream request through the stream pipeline to its handler and returns the items as
+    /// they are produced. Nothing runs until the stream is read; exceptions surface while reading.
+    /// </summary>
+    IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a stream for a request whose type is only known at runtime.</summary>
+    IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Publishes notifications to every registered handler.</summary>

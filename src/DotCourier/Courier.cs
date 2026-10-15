@@ -15,6 +15,7 @@ public partial class Courier : ICourier
 {
     private static readonly ConcurrentDictionary<Type, RequestHandlerBase> RequestHandlers = new();
     private static readonly ConcurrentDictionary<Type, NotificationHandlerWrapper> NotificationHandlers = new();
+    private static readonly ConcurrentDictionary<Type, StreamHandlerBase> StreamHandlers = new();
 
     private readonly IServiceProvider _services;
     private readonly CourierOptions _options;
@@ -41,6 +42,22 @@ public partial class Courier : ICourier
     {
         ArgumentNullException.ThrowIfNull(request);
         var wrapper = RequestHandlers.GetOrAdd(request.GetType(), CreateRequestWrapper);
+        return wrapper.HandleBoxed(request, _services, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var wrapper = (StreamHandlerWrapper<TResponse>)StreamHandlers.GetOrAdd(request.GetType(), CreateStreamWrapper);
+        return wrapper.Handle(request, _services, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var wrapper = StreamHandlers.GetOrAdd(request.GetType(), CreateStreamWrapper);
         return wrapper.HandleBoxed(request, _services, cancellationToken);
     }
 
@@ -121,6 +138,18 @@ public partial class Courier : ICourier
             NotificationPublishStrategy.SequentialThenThrow => PublishSequentialThenThrow(executors, typed, cancellationToken),
             _ => PublishSequential(executors, typed, cancellationToken),
         };
+    }
+
+    private static StreamHandlerBase CreateStreamWrapper(Type requestType)
+    {
+        var streamInterface = requestType.GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamRequest<>))
+            ?? throw new ArgumentException(
+                $"'{requestType.Name}' does not implement {nameof(IStreamRequest<object>)}<TResponse>.", nameof(requestType));
+
+        var responseType = streamInterface.GetGenericArguments()[0];
+        var wrapperType = typeof(StreamHandlerWrapperImpl<,>).MakeGenericType(requestType, responseType);
+        return (StreamHandlerBase)Activator.CreateInstance(wrapperType)!;
     }
 
     private static RequestHandlerBase CreateRequestWrapper(Type requestType)
