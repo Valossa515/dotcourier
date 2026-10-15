@@ -26,6 +26,9 @@ jobs:
 
       - name: Test
         run: dotnet test --no-build -c Release --logger trx --results-directory TestResults
+        env:
+          # Runs the tests that need Docker, e.g. Kafka end to end (Testcontainers).
+          DOTCOURIER_DOCKER_TESTS: "true"
 
       - name: Pack
         run: dotnet pack --no-build -c Release -o artifacts

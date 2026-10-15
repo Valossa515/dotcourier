@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>DotCourier.Kafka</PackageId>
+    <Description>Delivers DotCourier's transactional outbox to Kafka: the stored events are published to topics (acks=all, idempotent producer) instead of the in-process handlers, so other services can consume them.</Description>
+    <RootNamespace>DotCourier.Kafka</RootNamespace>
+    <PackageTags>$(PackageTags);kafka;outbox;messaging;events;confluent</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Confluent.Kafka" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotCourier.Outbox.EntityFrameworkCore\DotCourier.Outbox.EntityFrameworkCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DotCourier.Tests" />
+  </ItemGroup>
+
+</Project>
