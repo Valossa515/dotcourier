@@ -86,7 +86,15 @@ public partial class Courier : ICourier
         Publish((object)notification, cancellationToken);
 
     /// <inheritdoc />
-    public Task Publish(object notification, CancellationToken cancellationToken = default)
+    public Task Publish(object notification, CancellationToken cancellationToken = default) =>
+        Publish(notification, _options.NotificationPublishStrategy, cancellationToken);
+
+    /// <summary>
+    /// Publishes <paramref name="notification"/> with <paramref name="strategy"/> instead of the
+    /// configured one, e.g. <see cref="NotificationPublishStrategy.SequentialThenThrow"/> to learn
+    /// whether every handler succeeded.
+    /// </summary>
+    public Task Publish(object notification, NotificationPublishStrategy strategy, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(notification);
         if (notification is not INotification typed)
@@ -106,10 +114,11 @@ public partial class Courier : ICourier
             return Task.CompletedTask;
         }
 
-        return _options.NotificationPublishStrategy switch
+        return strategy switch
         {
             NotificationPublishStrategy.ParallelWhenAll => PublishParallel(executors, typed, cancellationToken),
             NotificationPublishStrategy.StopOnFirstError => PublishStopOnFirstError(executors, typed, cancellationToken),
+            NotificationPublishStrategy.SequentialThenThrow => PublishSequentialThenThrow(executors, typed, cancellationToken),
             _ => PublishSequential(executors, typed, cancellationToken),
         };
     }
@@ -176,6 +185,36 @@ public partial class Courier : ICourier
             {
                 throw new NotificationHandlerException(executor.HandlerInstance.GetType(), notification.GetType(), ex);
             }
+        }
+    }
+
+    private static async Task PublishSequentialThenThrow(NotificationHandlerExecutor[] executors, INotification notification, CancellationToken cancellationToken)
+    {
+        List<NotificationHandlerException>? failures = null;
+        foreach (var executor in executors)
+        {
+            try
+            {
+                await executor.Callback(notification, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                (failures ??= []).Add(new NotificationHandlerException(executor.HandlerInstance.GetType(), notification.GetType(), ex));
+            }
+        }
+
+        if (failures is { Count: 1 })
+        {
+            throw failures[0];
+        }
+
+        if (failures is not null)
+        {
+            throw new AggregateException($"{failures.Count} notification handlers failed for '{CourierDiagnostics.GetRequestName(notification.GetType())}'", failures);
         }
     }
 

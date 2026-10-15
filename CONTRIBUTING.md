@@ -71,6 +71,7 @@ src/DotCourier.Resilience/   Polly-based behaviors
 src/DotCourier.FluentValidation/  IValidator<T> in the pipeline
 src/DotCourier.Caching/      HybridCache-based caching / idempotency
 src/DotCourier.EntityFrameworkCore/  EF Core transaction per command
+src/DotCourier.Outbox.EntityFrameworkCore/  transactional outbox on EF Core
 tests/DotCourier.Tests/      xUnit, runs on net8.0 and net10.0
 assets/                      logo, icon and README images
 ```

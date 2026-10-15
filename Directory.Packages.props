@@ -21,6 +21,9 @@
     <!-- DotCourier.EntityFrameworkCore: EF 8 runs on net8.0 and net10.0; apps on EF 9/10 lift it -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.32" />
 
+    <!-- DotCourier.Outbox.EntityFrameworkCore: background processor -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
+
     <!-- Test-only -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.32" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />

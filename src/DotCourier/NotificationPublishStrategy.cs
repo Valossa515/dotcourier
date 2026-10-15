@@ -21,4 +21,11 @@ public enum NotificationPublishStrategy
     /// rethrown wrapped in a <see cref="NotificationHandlerException"/>.
     /// </summary>
     StopOnFirstError,
+
+    /// <summary>
+    /// Handlers run one by one and all of them run, even after a failure; then <c>Publish</c> throws:
+    /// the <see cref="NotificationHandlerException"/> of the failure, or an <see cref="AggregateException"/>
+    /// of them when several handlers failed. The outbox delivers with it, so a failure is retried.
+    /// </summary>
+    SequentialThenThrow,
 }

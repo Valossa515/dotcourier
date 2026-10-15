@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\DotCourier.FluentValidation\DotCourier.FluentValidation.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Caching\DotCourier.Caching.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.EntityFrameworkCore\DotCourier.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.Outbox.EntityFrameworkCore\DotCourier.Outbox.EntityFrameworkCore.csproj" />
   </ItemGroup>
 
 </Project>

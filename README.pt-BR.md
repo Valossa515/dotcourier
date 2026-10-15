@@ -95,6 +95,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Roda seus `IValidator<T>` no pipeline; exceções do FluentValidation viram 400 |
 | [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Cache de queries, commands idempotentes e invalidação de cache sobre HybridCache (pronto para Redis) |
 | [`DotCourier.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.EntityFrameworkCore) | Todo command numa transação do EF Core (commit / rollback), com efeitos colaterais pós-commit |
+| [`DotCourier.Outbox.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.Outbox.EntityFrameworkCore) | Transactional outbox: notificações gravadas junto com os dados e entregues pelo menos uma vez, em background |
 
 Todos os pacotes têm como alvo **net8.0** e **net10.0**.
 
@@ -553,6 +554,65 @@ public sealed class PlaceOrderHandler(StoreDbContext db, ICourierTransaction tx,
 | `IsolationLevel` | o padrão do provider | por exemplo `IsolationLevel.Serializable` |
 | `AllRequests` | `false` | envolve todo request, para apps que modelam escrita como `IRequest<T>` comum (estilo MediatR) |
 
+## 📮 Transactional outbox
+
+```bash
+dotnet add package DotCourier.Outbox.EntityFrameworkCore
+```
+
+O `OnCommittedAsync` roda efeitos colaterais depois do commit, mas em memória: se o processo cair
+logo depois do commit, eles se perdem. O **outbox** grava a notificação **na mesma transação** dos
+seus dados e a entrega depois, por um processador em background, até dar certo.
+
+```csharp
+// 1. Mapeie a tabela no seu DbContext e crie uma migration como sempre.
+protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.AddCourierOutbox();
+
+// 2. Ligue o outbox (com as transações, para a mensagem ir junto com o commit ou o rollback do command).
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddEntityFrameworkTransactions<StoreDbContext>()
+    .AddOutbox<StoreDbContext>());
+
+// 3. Registre as notificações no outbox em vez de publicá-las.
+public sealed class PlaceOrderHandler(StoreDbContext db, IOutbox outbox) : ICommandHandler<PlaceOrder, Response<OrderDto>>
+{
+    public async Task<Response<OrderDto>> Handle(PlaceOrder command, CancellationToken ct)
+    {
+        var order = Order.Place(command.Customer, command.Lines);
+        db.Orders.Add(order);
+        outbox.Add(new OrderPlaced(order.Id, order.Total)); // gravada pelo SaveChanges logo abaixo
+        await db.SaveChangesAsync(ct);
+        return Response.Created(OrderDto.From(order));
+    }
+}
+```
+
+- **Atômico:** a mensagem é uma linha gravada pelo seu `SaveChangesAsync` (`outbox.Add`), ou pelo
+  `outbox.PublishAsync`, que salva por você. Ela existe se, e somente se, os dados existirem.
+- **Pelo menos uma vez:** o processador entrega cada mensagem aos handlers de notificação, todos os
+  handlers rodam, e qualquer falha faz a mensagem ser tentada de novo (até `MaxAttempts`, depois
+  `Failed`). Uma queda entre entregar e registrar a entrega faz a mensagem sair de novo. **Os handlers
+  precisam tolerar duplicatas.**
+- **Rápido:** o processador acorda logo depois do commit; o polling é só a rede de segurança.
+- **Várias instâncias:** a mensagem é reservada usando o status como token de concorrência, então só
+  uma instância a entrega. Mensagens que ficaram em `Processing` por causa de uma instância que caiu
+  voltam depois do `ProcessingTimeout`.
+- **Outro destino:** registre o seu `IOutboxDispatcher` para mandar as mensagens a um broker em vez
+  dos handlers em processo (o Kafka é o próximo item do roadmap).
+
+| Opção (`AddOutbox<T>(o => ...)`) | Padrão | |
+|---|---|---|
+| `PollInterval` | 5 s | polling de segurança |
+| `BatchSize` | 100 | mensagens por ciclo |
+| `MaxAttempts` | 5 | depois disso, `Failed` (com `LastError` na linha) |
+| `ProcessingTimeout` | 1 min | tempo até uma mensagem abandonada ser entregue de novo |
+| `RunProcessor` | `true` | `false` nas instâncias que só gravam |
+| `JsonSerializerOptions` | padrão web | como as notificações são gravadas |
+
+A linha guarda a notificação em JSON e o tipo dela sem a versão do assembly, então mensagens gravadas
+antes de um deploy continuam sendo lidas depois dele.
+
 ## ⏱️ Timeouts
 
 ```csharp
@@ -576,6 +636,7 @@ await courier.Publish(new ProductCreated(id), ct);
 | `Sequential` (padrão) | um por vez; falhas são logadas, os demais continuam, `Publish` não lança |
 | `ParallelWhenAll` | todos de uma vez; falhas logadas; evite compartilhar um `DbContext` scoped |
 | `StopOnFirstError` | um por vez; a primeira falha lança `NotificationHandlerException` |
+| `SequentialThenThrow` | um por vez; todos os handlers rodam e depois as falhas são lançadas (o outbox usa este) |
 
 > O publisher padrão do MediatR lança na primeira falha. Se você depende disso, use `StopOnFirstError`.
 
@@ -625,6 +686,7 @@ Diferenças para ficar de olho:
 | Retry / circuit breaker / rate limit / bulkhead | ❌ | ✅ `DotCourier.Resilience` |
 | Cache de queries / commands idempotentes | ❌ | ✅ `DotCourier.Caching` |
 | Transação por command + ações pós-commit | ❌ você escreve o behavior | ✅ `DotCourier.EntityFrameworkCore` |
+| Transactional outbox | ❌ | ✅ `DotCourier.Outbox.EntityFrameworkCore` |
 | Exceções → `Response<T>` com status code | ❌ | ✅ `Dispatch` |
 | Ordem explícita de behaviors | ordem de registro | ✅ `BehaviorOrder` |
 | Requests de streaming | ✅ | 🔜 |
@@ -641,7 +703,7 @@ Cada módulo do [Spring Courier](https://github.com/Valossa515/spring-courier) g
 - [x] Atalhos de status e códigos de erro
 - [x] Cache e idempotência: `HybridCache` / `IDistributedCache` (Redis incluso)
 - [x] Transações: EF Core, com ações pós-commit
-- [ ] Transactional outbox com EF Core
+- [x] Transactional outbox com EF Core
 - [ ] Entrega do outbox para Kafka
 - [ ] Requests de streaming
 - [ ] Source generator para dispatch sem reflection e compatível com AOT
