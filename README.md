@@ -96,6 +96,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Query caching, idempotent commands and cache invalidation on HybridCache (Redis-ready) |
 | [`DotCourier.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.EntityFrameworkCore) | Every command in an EF Core transaction (commit / rollback), with after-commit side effects |
 | [`DotCourier.Outbox.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.Outbox.EntityFrameworkCore) | Transactional outbox: notifications stored with your data, delivered at least once in the background |
+| [`DotCourier.Kafka`](https://www.nuget.org/packages/DotCourier.Kafka) | Delivers the outbox to Kafka topics, so other services consume the events |
 
 All packages target **net8.0** and **net10.0**.
 
@@ -597,7 +598,7 @@ public sealed class PlaceOrderHandler(StoreDbContext db, IOutbox outbox) : IComm
 - **Several instances:** a message is claimed with the status as the concurrency token, so only one
   instance delivers it. Messages left `Processing` by a crashed instance return after `ProcessingTimeout`.
 - **Elsewhere:** register your own `IOutboxDispatcher` to send messages to a broker instead of the
-  in-process handlers (Kafka support is next on the roadmap).
+  in-process handlers, or use [Kafka](#-kafka-outbox-delivery).
 
 | Option (`AddOutbox<T>(o => ...)`) | Default | |
 |---|---|---|
@@ -610,6 +611,52 @@ public sealed class PlaceOrderHandler(StoreDbContext db, IOutbox outbox) : IComm
 
 The row stores the notification as JSON and its type without the assembly version, so messages
 written before a deploy are still read after it.
+
+## 📡 Kafka (outbox delivery)
+
+```bash
+dotnet add package DotCourier.Kafka
+```
+
+The outbox delivers to the handlers **of the same application**, which is what a monolith wants. When
+the events must **leave** the application, send the outbox to Kafka instead. The producing code does
+not change at all:
+
+```csharp
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddEntityFrameworkTransactions<StoreDbContext>()
+    .AddOutbox<StoreDbContext>()
+    .AddKafkaDelivery(o => o.BootstrapServers = "localhost:9092"));
+```
+
+This **redirects** delivery (the in-process handlers no longer receive outbox messages); it does not
+duplicate it.
+
+| Record part | Content |
+|---|---|
+| Topic | `TopicPrefix` + event type name: `courier.OrderPlaced`, `courier.DomainEventNotification-OrderPlaced` |
+| Key | the outbox message id |
+| Value | the stored JSON, **as is** (consumers do not need your event classes) |
+| Header `courier-message-id` | the outbox message id, to **deduplicate**: delivery is at least once |
+| Header `courier-event-type` | the event's type name |
+
+- **The send is awaited:** a message is only marked delivered after Kafka acknowledges it. A failure
+  or a timeout (`SendTimeout`) leaves it pending, and the outbox retries it.
+- **Durable producer:** `acks=all` and idempotence on by default. Adjust anything else (SASL, TLS,
+  compression) with `ConfigureProducer`.
+- **Ordering:** the key is the message id, which spreads load over partitions but gives **no order per
+  aggregate**. Register your own `IOutboxDispatcher` if you need it.
+- **Routing:** `Topic = "store-events"` sends everything to one topic; register an
+  `IOutboxTopicResolver` to decide per message.
+
+| Option (`AddKafkaDelivery(o => ...)`) | Default | |
+|---|---|---|
+| `BootstrapServers` | (required) | |
+| `TopicPrefix` | `courier.` | |
+| `Topic` | — | one topic for every event |
+| `SendTimeout` | 10 s | wait for the acknowledgement; bounds how long one message can hold up a cycle |
+| `ConfigureProducer` | — | any Confluent `ProducerConfig` setting |
 
 ## ⏱️ Timeouts
 
@@ -685,6 +732,7 @@ Differences to watch for:
 | Query caching / idempotent commands | ❌ | ✅ `DotCourier.Caching` |
 | Transaction per command + after-commit actions | ❌ write your own behavior | ✅ `DotCourier.EntityFrameworkCore` |
 | Transactional outbox | ❌ | ✅ `DotCourier.Outbox.EntityFrameworkCore` |
+| Outbox delivery to Kafka | ❌ | ✅ `DotCourier.Kafka` |
 | Exceptions → status-coded `Response<T>` | ❌ | ✅ `Dispatch` |
 | Explicit behavior ordering | registration order | ✅ `BehaviorOrder` |
 | Streaming requests | ✅ | 🔜 |
@@ -702,7 +750,7 @@ Each [Spring Courier](https://github.com/Valossa515/spring-courier) module gets 
 - [x] Caching and idempotency: `HybridCache` / `IDistributedCache` (Redis included)
 - [x] Transactions: EF Core, with after-commit actions
 - [x] Transactional outbox with EF Core
-- [ ] Outbox delivery to Kafka
+- [x] Outbox delivery to Kafka
 - [ ] Streaming requests
 - [ ] Source generator for reflection-free, AOT-friendly dispatch
 

@@ -47,7 +47,8 @@ internal static class TestHost
         Action<CourierConfiguration>? configure = null,
         CapturingLoggerProvider? logs = null,
         Action<IServiceCollection>? registerServices = null,
-        CallLog? sharedLog = null)
+        CallLog? sharedLog = null,
+        Action<IServiceCollection>? configureAfter = null)
     {
         var services = new ServiceCollection();
         services.AddLogging(logging =>
@@ -65,6 +66,7 @@ internal static class TestHost
             cfg.RegisterServicesFromAssemblyContaining<CallLog>();
             configure?.Invoke(cfg);
         });
+        configureAfter?.Invoke(services); // e.g. to replace what a module registered
 
         return (services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true }), log);
     }

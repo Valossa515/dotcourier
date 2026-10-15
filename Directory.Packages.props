@@ -24,8 +24,12 @@
     <!-- DotCourier.Outbox.EntityFrameworkCore: background processor -->
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
 
+    <!-- DotCourier.Kafka -->
+    <PackageVersion Include="Confluent.Kafka" Version="2.16.0" />
+
     <!-- Test-only -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.32" />
+    <PackageVersion Include="Testcontainers.Kafka" Version="4.16.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
