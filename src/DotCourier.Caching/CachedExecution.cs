@@ -28,7 +28,12 @@ internal static class CachedExecution
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        var state = (Next: next, Executed: new StrongBox<bool>());
+        // HybridCache starts the factory on a separate work item WITHOUT the caller's ExecutionContext
+        // whenever the caller's token can be cancelled, which is always true for an HTTP request
+        // (HttpContext.RequestAborted). The rest of the pipeline and the handler would then lose
+        // everything that lives in AsyncLocal: the request culture, IHttpContextAccessor (user,
+        // tenant), Activity.Current (traces). Capture it here and run the pipeline inside it.
+        var state = (Next: next, Executed: new StrongBox<bool>(), Context: ExecutionContext.Capture());
         var local = localDuration is { } max && max < duration ? max : duration;
         var entryOptions = new HybridCacheEntryOptions { Expiration = duration, LocalCacheExpiration = local };
         try
@@ -39,7 +44,7 @@ internal static class CachedExecution
                 static async (s, token) =>
                 {
                     s.Executed.Value = true;
-                    var result = await s.Next(token).ConfigureAwait(false);
+                    var result = await RunInContext(s.Context, s.Next, token).ConfigureAwait(false);
                     if (result is null || result is IResponseStatus { IsSuccess: false })
                     {
                         throw new SkipCacheException(result);
@@ -57,6 +62,22 @@ internal static class CachedExecution
         {
             return ((TResponse)skip.Result!, state.Executed.Value);
         }
+    }
+
+    /// <summary>
+    /// Starts <paramref name="next"/> inside <paramref name="context"/>. Its awaits capture that
+    /// context, so the whole remaining pipeline and the handler run with the caller's ambient state.
+    /// </summary>
+    private static Task<TResponse> RunInContext<TResponse>(ExecutionContext? context, RequestHandlerDelegate<TResponse> next, CancellationToken token)
+    {
+        if (context is null)
+        {
+            return next(token);
+        }
+
+        Task<TResponse>? started = null;
+        ExecutionContext.Run(context, _ => started = next(token), null);
+        return started!;
     }
 
     /// <summary>Carries a result that must not be cached out of the cache factory.</summary>
