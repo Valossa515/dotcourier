@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>DotCourier.Caching.Redis</PackageId>
+    <Description>Redis lock for DotCourier's [Idempotent] requests: a duplicate runs once even when it reaches several application instances at the same time.</Description>
+    <RootNamespace>DotCourier.Caching.Redis</RootNamespace>
+    <PackageTags>$(PackageTags);redis;idempotency;distributed-lock;caching</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotCourier.Caching\DotCourier.Caching.csproj" />
+  </ItemGroup>
+
+</Project>

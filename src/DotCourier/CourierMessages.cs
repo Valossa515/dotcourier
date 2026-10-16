@@ -100,6 +100,12 @@ public sealed class CourierMessages
     /// <summary>DotCourier.Resilience: the bulkhead is full (503). Placeholder: <c>{request}</c>.</summary>
     public CourierMessage BulkheadRejected { get; set; } = "Service busy: too many concurrent executions of this operation";
 
+    /// <summary>
+    /// DotCourier.Caching: another instance is still running the same <c>[Idempotent]</c> request (409).
+    /// Placeholder: <c>{request}</c>.
+    /// </summary>
+    public CourierMessage IdempotencyInProgress { get; set; } = "A request with the same idempotency key is already being processed";
+
     /// <summary>The defaults, used where no configuration is available.</summary>
     public static CourierMessages Default { get; } = new();
 }

@@ -95,6 +95,34 @@ internal static class CachedExecution
         return started!;
     }
 
+    /// <summary>
+    /// The recorded result for <paramref name="key"/>, from memory or the shared level, without running anything
+    /// or writing anything: the factory only signals that nothing is recorded.
+    /// </summary>
+    public static async Task<(bool Found, TResponse Response)> TryGetAsync<TResponse>(HybridCache cache, string key, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await cache.GetOrCreateAsync<TResponse>(
+                key,
+                static _ => throw new NotRecordedException(),
+                ReadOnly,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            return (true, response);
+        }
+        catch (NotRecordedException)
+        {
+            return (false, default!);
+        }
+    }
+
+    private static readonly HybridCacheEntryOptions ReadOnly = new()
+    {
+        Flags = HybridCacheEntryFlags.DisableLocalCacheWrite | HybridCacheEntryFlags.DisableDistributedCacheWrite,
+    };
+
+    private sealed class NotRecordedException() : Exception("Not recorded");
+
     /// <summary>Carries a result that must not be cached out of the cache factory.</summary>
     internal sealed class SkipCacheException(object? result) : Exception("Result not cached")
     {

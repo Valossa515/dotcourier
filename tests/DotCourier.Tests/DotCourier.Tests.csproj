@@ -14,6 +14,7 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Testcontainers.Kafka" />
+    <PackageReference Include="Testcontainers.Redis" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +27,7 @@
     <ProjectReference Include="..\..\src\DotCourier.Resilience\DotCourier.Resilience.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.FluentValidation\DotCourier.FluentValidation.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Caching\DotCourier.Caching.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.Caching.Redis\DotCourier.Caching.Redis.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.EntityFrameworkCore\DotCourier.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Outbox.EntityFrameworkCore\DotCourier.Outbox.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Kafka\DotCourier.Kafka.csproj" />

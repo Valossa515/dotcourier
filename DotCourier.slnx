@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/DotCourier.AspNetCore/DotCourier.AspNetCore.csproj" />
+    <Project Path="src/DotCourier.Caching.Redis/DotCourier.Caching.Redis.csproj" />
     <Project Path="src/DotCourier.Caching/DotCourier.Caching.csproj" />
     <Project Path="src/DotCourier.EntityFrameworkCore/DotCourier.EntityFrameworkCore.csproj" />
     <Project Path="src/DotCourier.Outbox.EntityFrameworkCore/DotCourier.Outbox.EntityFrameworkCore.csproj" />

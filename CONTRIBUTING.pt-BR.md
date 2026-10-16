@@ -71,6 +71,7 @@ src/DotCourier.AspNetCore/   Response<T> → IResult / IActionResult
 src/DotCourier.Resilience/   behaviors baseados em Polly
 src/DotCourier.FluentValidation/  IValidator<T> no pipeline
 src/DotCourier.Caching/      cache / idempotência sobre HybridCache
+src/DotCourier.Caching.Redis/  trava de idempotência no Redis
 src/DotCourier.EntityFrameworkCore/  transação do EF Core por command
 src/DotCourier.Outbox.EntityFrameworkCore/  transactional outbox sobre EF Core
 src/DotCourier.Kafka/        entrega do outbox para o Kafka

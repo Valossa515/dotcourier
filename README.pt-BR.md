@@ -94,6 +94,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter e bulkhead sobre Polly v8 |
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Roda seus `IValidator<T>` no pipeline; exceções do FluentValidation viram 400 |
 | [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Cache de queries, commands idempotentes e invalidação de cache sobre HybridCache (pronto para Redis) |
+| [`DotCourier.Caching.Redis`](https://www.nuget.org/packages/DotCourier.Caching.Redis) | Trava no Redis para um command `[Idempotent]` rodar uma vez só entre todas as instâncias |
 | [`DotCourier.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.EntityFrameworkCore) | Todo command numa transação do EF Core (commit / rollback), com efeitos colaterais pós-commit |
 | [`DotCourier.Outbox.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.Outbox.EntityFrameworkCore) | Transactional outbox: notificações gravadas junto com os dados e entregues pelo menos uma vez, em background |
 | [`DotCourier.Kafka`](https://www.nuget.org/packages/DotCourier.Kafka) | Entrega o outbox em tópicos do Kafka, para outros serviços consumirem os eventos |
@@ -484,8 +485,9 @@ public sealed record PlaceOrder(string IdempotencyKey, Cart Cart) : ICommand<Res
   não são registradas, então uma nova tentativa executa de novo. Implemente `IIdempotencyKey`
   para usar como chave um header `Idempotency-Key` enviado pelo cliente, em vez do conteúdo do request.
   A resposta só sai depois que o registro está no cache compartilhado, então uma nova tentativa que
-  chegue a outra instância também o encontra. Já a espera pela primeira execução vale por instância:
-  duas duplicatas que chegam **ao mesmo tempo em instâncias diferentes** podem rodar as duas.
+  chegue a outra instância também o encontra. Duplicatas que chegam **ao mesmo tempo em instâncias
+  diferentes** precisam de uma trava compartilhada (abaixo); sem ela, a espera pela primeira execução
+  só acontece dentro de cada instância.
 - **`ICourierCache`** remove por código: `InvalidateAsync<GetProduct>()`, `InvalidateAsync(request)`,
   `InvalidateAllAsync()`, `ForgetIdempotentResultAsync(request)`.
 
@@ -506,6 +508,29 @@ ser serializáveis com System.Text.Json.
 | `CacheAllQueries` | `false` | guarda toda `IQuery<T>` (comportamento do Spring Courier) |
 | `LocalCacheDuration` | duração da entrada | limita a cópia em memória; com várias instâncias, a remoção limpa a camada compartilhada, mas as outras instâncias mantêm a cópia em memória até isso expirar |
 | `KeyPrefix` | `dotcourier` | para dividir um servidor de cache entre aplicações |
+| `IdempotencyLockDuration` | 1 min | com trava: tempo máximo que um request a segura; mantenha acima do seu handler idempotente mais lento |
+| `IdempotencyLockWait` | 10 s | com trava: quanto uma duplicata espera antes de responder **409** |
+
+### Várias instâncias: a trava de idempotência
+
+```bash
+dotnet add package DotCourier.Caching.Redis
+```
+
+```csharp
+builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "localhost:6379"); // resultados compartilhados
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddCaching()
+    .AddRedisIdempotencyLock("localhost:6379"));                                     // trava compartilhada
+```
+
+Só a instância que tem a trava executa o command. As outras esperam, encontram o resultado registrado
+assim que ele é gravado e o devolvem. Uma duplicata que espera mais que `IdempotencyLockWait` recebe
+**409** (`cfg.Messages.IdempotencyInProgress`) e pode tentar de novo depois. Se a instância que executa o
+command cair, a trava expira depois de `IdempotencyLockDuration`. Falhas continuam soltando a trava e
+não são registradas, então uma nova tentativa executa de novo. Para outro armazenamento, implemente
+`IIdempotencyLock` (um método) e registre.
 
 ## 💾 Transações (EF Core)
 
