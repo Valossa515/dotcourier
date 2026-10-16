@@ -94,6 +94,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter and bulkhead on Polly v8 |
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Runs your `IValidator<T>` in the pipeline; FluentValidation exceptions become 400 |
 | [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Query caching, idempotent commands and cache invalidation on HybridCache (Redis-ready) |
+| [`DotCourier.Caching.Redis`](https://www.nuget.org/packages/DotCourier.Caching.Redis) | Redis lock so an `[Idempotent]` command runs once across all instances |
 | [`DotCourier.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.EntityFrameworkCore) | Every command in an EF Core transaction (commit / rollback), with after-commit side effects |
 | [`DotCourier.Outbox.EntityFrameworkCore`](https://www.nuget.org/packages/DotCourier.Outbox.EntityFrameworkCore) | Transactional outbox: notifications stored with your data, delivered at least once in the background |
 | [`DotCourier.Kafka`](https://www.nuget.org/packages/DotCourier.Kafka) | Delivers the outbox to Kafka topics, so other services consume the events |
@@ -480,9 +481,9 @@ public sealed record PlaceOrder(string IdempotencyKey, Cart Cart) : ICommand<Res
   duplicates wait for the first execution** instead of running in parallel. Failures are not
   recorded, so a retry runs again. Implement `IIdempotencyKey` to key it by a client-provided
   `Idempotency-Key` header instead of the request content. The response only leaves once the record
-  is in the shared cache, so a retry that reaches another instance gets it too. Waiting for the first
-  execution, however, happens per instance: two duplicates arriving **at the same time on different
-  instances** can both run.
+  is in the shared cache, so a retry that reaches another instance gets it too. Duplicates arriving
+  **at the same time on different instances** need a shared lock (below); without one, waiting for
+  the first execution only happens within each instance.
 - **`ICourierCache`** evicts from code: `InvalidateAsync<GetProduct>()`, `InvalidateAsync(request)`,
   `InvalidateAllAsync()`, `ForgetIdempotentResultAsync(request)`.
 
@@ -503,6 +504,29 @@ System.Text.Json.
 | `CacheAllQueries` | `false` | cache every `IQuery<T>` (Spring Courier's behavior) |
 | `LocalCacheDuration` | entry duration | caps the in-memory copy; with several instances, an eviction clears the shared level but other instances keep their memory copy until this expires |
 | `KeyPrefix` | `dotcourier` | to share one cache server between apps |
+| `IdempotencyLockDuration` | 1 min | with a lock: longest a request can hold it; keep it above your slowest idempotent handler |
+| `IdempotencyLockWait` | 10 s | with a lock: how long a duplicate waits before answering **409** |
+
+### Several instances: the idempotency lock
+
+```bash
+dotnet add package DotCourier.Caching.Redis
+```
+
+```csharp
+builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "localhost:6379"); // shared results
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddCaching()
+    .AddRedisIdempotencyLock("localhost:6379"));                                     // shared lock
+```
+
+Only the instance holding the lock runs the command. The others wait, find the recorded result as soon
+as it is written, and return it. A duplicate that waits longer than `IdempotencyLockWait` gets
+**409** (`cfg.Messages.IdempotencyInProgress`) and can retry later. If the instance running the command
+crashes, the lock expires after `IdempotencyLockDuration`. Failures still release the lock and are not
+recorded, so a retry runs again. For another store, implement `IIdempotencyLock` (one method) and
+register it.
 
 ## 💾 Transactions (EF Core)
 

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Reflection;
 using DotCourier.Behaviors;
 using Microsoft.Extensions.Caching.Hybrid;
@@ -84,13 +85,23 @@ internal sealed partial class IdempotencyBehavior<TRequest, TResponse> : IPipeli
     private readonly HybridCache _cache;
     private readonly CacheKeys _keys;
     private readonly CourierCachingOptions _options;
+    private readonly IIdempotencyLock? _lock;
+    private readonly CourierOptions? _courierOptions;
     private readonly ILogger _logger;
 
-    public IdempotencyBehavior(HybridCache cache, CacheKeys keys, CourierCachingOptions options, ILogger<IdempotencyBehavior<TRequest, TResponse>>? logger = null)
+    public IdempotencyBehavior(
+        HybridCache cache,
+        CacheKeys keys,
+        CourierCachingOptions options,
+        IIdempotencyLock? idempotencyLock = null,
+        CourierOptions? courierOptions = null,
+        ILogger<IdempotencyBehavior<TRequest, TResponse>>? logger = null)
     {
         _cache = cache;
         _keys = keys;
         _options = options;
+        _lock = idempotencyLock;
+        _courierOptions = courierOptions;
         _logger = logger ?? (ILogger)NullLogger.Instance;
     }
 
@@ -109,7 +120,59 @@ internal sealed partial class IdempotencyBehavior<TRequest, TResponse> : IPipeli
         }
 
         var duration = Idempotent.Seconds is { } seconds ? TimeSpan.FromSeconds(seconds) : _options.DefaultIdempotencyDuration;
-        return Run(key, duration, next, cancellationToken);
+        return _lock is null ? Run(key, duration, next, cancellationToken) : RunLocked(key, duration, next, cancellationToken);
+    }
+
+    /// <summary>
+    /// With a shared lock: only the instance holding it runs the request. The others wait, checking for the
+    /// recorded result, and get it as soon as the holder records it; after
+    /// <see cref="CourierCachingOptions.IdempotencyLockWait"/> they give up with 409.
+    /// </summary>
+    private async Task<TResponse> RunLocked(string key, TimeSpan duration, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
+    {
+        if (await Recorded(key, cancellationToken).ConfigureAwait(false) is { Found: true } early)
+        {
+            return early.Response;
+        }
+
+        var waited = Stopwatch.StartNew();
+        var pause = TimeSpan.FromMilliseconds(20);
+        IAsyncDisposable? handle;
+        while ((handle = await _lock!.TryAcquireAsync(key + ":lock", _options.IdempotencyLockDuration, cancellationToken).ConfigureAwait(false)) is null)
+        {
+            if (await Recorded(key, cancellationToken).ConfigureAwait(false) is { Found: true } finished)
+            {
+                return finished.Response;
+            }
+
+            if (waited.Elapsed >= _options.IdempotencyLockWait)
+            {
+                LogStillRunning(RequestName);
+                throw new IdempotencyInProgressException(typeof(TRequest), _courierOptions?.Messages);
+            }
+
+            await Task.Delay(pause, cancellationToken).ConfigureAwait(false);
+            pause = TimeSpan.FromMilliseconds(Math.Min(pause.TotalMilliseconds * 2, 500));
+        }
+
+        await using (handle.ConfigureAwait(false))
+        {
+            // If the previous holder recorded the result just before releasing, Run finds it: it reads the cache
+            // (memory, then the shared level) before running anything.
+            return await Run(key, duration, next, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<(bool Found, TResponse Response)> Recorded(string key, CancellationToken cancellationToken)
+    {
+        var recorded = await CachedExecution.TryGetAsync<TResponse>(_cache, key, cancellationToken).ConfigureAwait(false);
+        if (recorded.Found)
+        {
+            CachedExecution.IdempotencyHits.Add(1, new KeyValuePair<string, object?>("courier.request.type", RequestName));
+            LogDuplicate(RequestName);
+        }
+
+        return recorded;
     }
 
     private async Task<TResponse> Run(string key, TimeSpan duration, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
@@ -134,6 +197,9 @@ internal sealed partial class IdempotencyBehavior<TRequest, TResponse> : IPipeli
 
     [LoggerMessage(Level = LogLevel.Information, Message = "[Courier] Duplicate {RequestType} answered with the recorded result")]
     private partial void LogDuplicate(string requestType);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "[Courier] Duplicate {RequestType} gave up waiting: another instance is still running it")]
+    private partial void LogStillRunning(string requestType);
 }
 
 /// <summary>Evicts the caches listed in <see cref="InvalidatesCacheAttribute"/> once the request succeeded.</summary>

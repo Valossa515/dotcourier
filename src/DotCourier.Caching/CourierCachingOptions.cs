@@ -28,6 +28,19 @@ public sealed class CourierCachingOptions
     /// <summary>Prefix of every key and tag, to share one cache server between applications. Default <c>"dotcourier"</c>.</summary>
     public string KeyPrefix { get; set; } = "dotcourier";
 
+    /// <summary>
+    /// With an <see cref="IIdempotencyLock"/>: how long the lock is held at most. It must outlast the slowest
+    /// idempotent handler, or a duplicate on another instance could start while the first still runs.
+    /// Default 1 minute.
+    /// </summary>
+    public TimeSpan IdempotencyLockDuration { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// With an <see cref="IIdempotencyLock"/>: how long a duplicate waits for the instance running the request
+    /// before giving up with <see cref="IdempotencyInProgressException"/> (409). Default 10 seconds.
+    /// </summary>
+    public TimeSpan IdempotencyLockWait { get; set; } = TimeSpan.FromSeconds(10);
+
     /// <summary>Serializer options used to turn a request into its key (not to store results). Default: <see cref="JsonSerializerOptions.Default"/>.</summary>
     public JsonSerializerOptions? KeySerializerOptions { get; set; }
 
@@ -46,6 +59,16 @@ public sealed class CourierCachingOptions
         if (LocalCacheDuration is { } local && local <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(LocalCacheDuration), "Must be positive.");
+        }
+
+        if (IdempotencyLockDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(IdempotencyLockDuration), "Must be positive.");
+        }
+
+        if (IdempotencyLockWait < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(IdempotencyLockWait), "Must not be negative.");
         }
 
         if (string.IsNullOrWhiteSpace(KeyPrefix))

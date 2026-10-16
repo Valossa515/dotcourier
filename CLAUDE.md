@@ -8,7 +8,7 @@ started after MediatR moved to a commercial license. Distributed via **NuGet**, 
 
 - **Package prefix:** `DotCourier` (the bare `Courier` ID on NuGet belongs to someone else)
 - **Targets:** `net8.0` and `net10.0`
-- **Version:** 0.11.0 (in `Directory.Build.props`; CI overrides it from the release tag)
+- **Version:** 0.12.0 (in `Directory.Build.props`; CI overrides it from the release tag)
 
 ## Design principles
 
@@ -47,6 +47,7 @@ dotcourier/
 │   ├── DotCourier.Resilience/   # retry / circuit breaker / rate limiter / bulkhead on Polly v8
 │   ├── DotCourier.FluentValidation/ # IValidator<T> in the validation step + exception translation
 │   ├── DotCourier.Caching/      # [Cacheable]/[Idempotent]/[InvalidatesCache] on HybridCache
+│   ├── DotCourier.Caching.Redis/ # RedisIdempotencyLock: cross-instance lock for [Idempotent] (StackExchange.Redis 2.7.27)
 │   ├── DotCourier.EntityFrameworkCore/ # transaction per command + ICourierTransaction (after commit)
 │   ├── DotCourier.Outbox.EntityFrameworkCore/ # IOutbox + background processor (at-least-once delivery)
 │   ├── DotCourier.Kafka/        # IOutboxDispatcher that publishes the outbox to Kafka (Confluent.Kafka)
@@ -71,6 +72,16 @@ dotcourier/
 | `DotCourier.Resilience` | `cfg.AddResilience(o => ...)`: Polly pipelines cached per (request type, strategy) in a singleton; rejections thrown as `CourierException` subclasses (`CircuitOpenException` 503, `RateLimitExceededException` 429, `BulkheadRejectedException` 503). Only the breaker is on by default. Breaker outside retry and bulkhead inside retry are pinned by tests. |
 
 ## Key mechanics
+
+- **Idempotency lock (0.12.0):** with an `IIdempotencyLock` registered, `IdempotencyBehavior.RunLocked` checks
+  for a recorded result (`CachedExecution.TryGetAsync`: `GetOrCreateAsync` with read-only flags and a factory
+  that throws `NotRecordedException`, since `default(T)` can be a legit recorded value), then polls
+  `TryAcquireAsync(key + ":lock")` with backoff, checking for the record between attempts; after
+  `IdempotencyLockWait` → `IdempotencyInProgressException` (409, `Messages.IdempotencyInProgress`). Holding the
+  lock it calls the unlocked `Run`, which already reads memory and the shared level before running, so no
+  re-check is needed there (a mutation pinned that). `RedisIdempotencyLock`: `SET NX PX` + compare-and-delete
+  Lua script. Tests use a `SharedLock` fake across two `TestHost` "instances" sharing a `FakeRedis`; the real
+  Redis test is a `[DockerFact]` (Testcontainers).
 
 - **Native AOT / compile-time mode (0.11.0):** `cfg.RequireCompileTimeRegistrations` (default
   `!RuntimeFeature.IsDynamicCodeSupported`; `PublishAot=true` makes that false even for `dotnet run`) →
