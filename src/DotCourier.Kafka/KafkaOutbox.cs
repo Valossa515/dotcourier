@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Confluent.Kafka;
+using DotCourier.Generated;
 using DotCourier.Outbox;
 
 namespace DotCourier.Kafka;
@@ -92,9 +94,17 @@ internal sealed class EventTypeTopicResolver(CourierKafkaOptions options) : IOut
 
     private static string NameOf(string eventType)
     {
-        var type = Type.GetType(eventType, throwOnError: false);
+        var type = GeneratedCourierRegistry.NotificationTypes.FirstOrDefault(t => OutboxTypeName(t) == eventType) ?? FromName(eventType);
         return Sanitize(type is null ? FallbackName(eventType) : NameOf(type));
     }
+
+    /// <summary>The outbox's stored name (<c>Namespace.Type, Assembly</c>, generic arguments in brackets).</summary>
+    private static string OutboxTypeName(Type type) => type.IsGenericType
+        ? $"{type.GetGenericTypeDefinition().FullName}[{string.Join(",", type.GetGenericArguments().Select(a => $"[{OutboxTypeName(a)}]"))}], {type.Assembly.GetName().Name}"
+        : $"{type.FullName}, {type.Assembly.GetName().Name}";
+
+    [UnconditionalSuppressMessage("Trimming", "IL2057", Justification = "Types registered at compile time are found first; an unknown name falls back to the text of the name.")]
+    private static Type? FromName(string eventType) => Type.GetType(eventType, throwOnError: false);
 
     private static string NameOf(Type type)
     {

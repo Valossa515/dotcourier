@@ -13,8 +13,7 @@ internal sealed partial class CachingBehavior<TRequest, TResponse> : IPipelineBe
     where TRequest : notnull
 {
     private static readonly CacheableAttribute? Cacheable = typeof(TRequest).GetCustomAttribute<CacheableAttribute>(inherit: true);
-    private static readonly bool IsQuery = typeof(TRequest).GetInterfaces()
-        .Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>));
+    private static readonly bool IsQuery = typeof(IQuery<TResponse>).IsAssignableFrom(typeof(TRequest));
     private static readonly string RequestName = CourierDiagnostics.GetRequestName(typeof(TRequest));
 
     private readonly HybridCache _cache;

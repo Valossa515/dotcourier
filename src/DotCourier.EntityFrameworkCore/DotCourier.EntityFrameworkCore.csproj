@@ -5,6 +5,10 @@
     <Description>EF Core transactions for DotCourier: every command runs in a transaction that commits on success and rolls back on exceptions or error responses, with after-commit actions for side effects.</Description>
     <RootNamespace>DotCourier.EntityFrameworkCore</RootNamespace>
     <PackageTags>$(PackageTags);entityframeworkcore;efcore;transactions;unitofwork</PackageTags>
+    <!-- Our code is kept free of trim/AOT warnings, but EF Core's own Native AOT support is still
+         experimental, so the package does not claim AOT compatibility. -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
   </PropertyGroup>
 
   <ItemGroup>

@@ -12,6 +12,14 @@ public sealed class ClassOnlyBehavior<TRequest, TResponse> : IPipelineBehavior<T
     public Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken) => next(cancellationToken);
 }
 
+/// <summary>A value-type response of its own (TelemetryProbe is counted by the telemetry test, which runs in parallel).</summary>
+public sealed record Sum(int A, int B) : IRequest<int>;
+
+public sealed class SumHandler : IRequestHandler<Sum, int>
+{
+    public Task<int> Handle(Sum request, CancellationToken cancellationToken) => Task.FromResult(request.A + request.B);
+}
+
 /// <summary>A closed behavior that records where it runs, to pin its position among open ones.</summary>
 public sealed class PingMarkerBehavior(CallLog log) : IPipelineBehavior<Ping, string>
 {
@@ -82,7 +90,7 @@ public class CompileTimeModeTests
         AssertSameInBothModes(
             async courier =>
             {
-                Assert.Equal(42, await courier.Send(new TelemetryProbe(Fail: false)));
+                Assert.Equal(42, await courier.Send(new Sum(40, 2)));
                 var id = await courier.Send(new Register("Ana", "ana@example.com", 30));
                 Assert.NotEqual(Guid.Empty, id);
             },
@@ -193,7 +201,7 @@ public class CompileTimeModeTests
         // Open handlers and validators stay open (the container closes them for reference types); behaviors do not.
         Assert.DoesNotContain(services, d => d.ServiceType == typeof(IPipelineBehavior<,>) || d.ServiceType == typeof(IStreamPipelineBehavior<,>));
         Assert.Contains(services, d => d.ServiceType == typeof(IPipelineBehavior<Ping, string>) && d.ImplementationType == typeof(OuterBehavior<Ping, string>));
-        Assert.Contains(services, d => d.ServiceType == typeof(IPipelineBehavior<TelemetryProbe, int>) && d.ImplementationType == typeof(Behaviors.LoggingBehavior<TelemetryProbe, int>));
+        Assert.Contains(services, d => d.ServiceType == typeof(IPipelineBehavior<Sum, int>) && d.ImplementationType == typeof(Behaviors.LoggingBehavior<Sum, int>));
         Assert.Contains(services, d => d.ServiceType == typeof(IStreamPipelineBehavior<CountTo, int>) && d.ImplementationType == typeof(Behaviors.StreamValidationBehavior<CountTo, int>));
         Assert.Contains(services, d => d.ServiceType == typeof(IExceptionHandlerInvoker<Fragile, string>));
     }

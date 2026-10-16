@@ -13,6 +13,14 @@
     <PublishTrimmed Condition="'$(TrimOnly)' == 'true'">true</PublishTrimmed>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!--
+      Microsoft.Extensions.Caching.Hybrid's built-in JSON serializer uses reflection and is reachable from
+      AddHybridCache, so any trimmed app using HybridCache gets these from that assembly (9.x and 10.x alike).
+      DotCourier registers its own serializer (ResultSerializerOptions), so that code never runs for its types.
+      They stay warnings here; the same codes in DotCourier's own code are errors at build time
+      (IsAotCompatible analyzers on every DotCourier package this app uses).
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2026;IL2070;IL2104</WarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +30,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DotCourier\DotCourier.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.AspNetCore\DotCourier.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\DotCourier.Caching\DotCourier.Caching.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.Resilience\DotCourier.Resilience.csproj" />
     <ProjectReference Include="..\..\src\DotCourier.SourceGenerator\DotCourier.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

@@ -506,6 +506,7 @@ System.Text.Json.
 | `KeyPrefix` | `dotcourier` | to share one cache server between apps |
 | `IdempotencyLockDuration` | 1 min | with a lock: longest a request can hold it; keep it above your slowest idempotent handler |
 | `IdempotencyLockWait` | 10 s | with a lock: how long a duplicate waits before answering **409** |
+| `ResultSerializerOptions` | — | JSON options for stored results (and keys); **required under Native AOT** (your source-generated context) |
 
 ### Several instances: the idempotency lock
 
@@ -632,7 +633,7 @@ public sealed class PlaceOrderHandler(StoreDbContext db, IOutbox outbox) : IComm
 | `MaxAttempts` | 5 | then `Failed` (with `LastError` in the row) |
 | `ProcessingTimeout` | 1 min | after which an abandoned message is delivered again |
 | `RunProcessor` | `true` | `false` on instances that only write |
-| `JsonSerializerOptions` | web defaults | how notifications are stored |
+| `JsonSerializerOptions` | web defaults | how notifications are stored; give it your source-generated context under Native AOT |
 
 The row stores the notification as JSON and its type without the assembly version, so messages
 written before a deploy are still read after it.
@@ -793,10 +794,11 @@ skips building its per-request wrappers at runtime (`MakeGenericType`).
 
 ## 🚀 Native AOT
 
-`DotCourier`, `DotCourier.AspNetCore` and `DotCourier.Resilience` work in apps published with
-`<PublishAot>true</PublishAot>`, together with `DotCourier.SourceGenerator` in every project that declares
-handlers. CI publishes a test app with Native AOT on every push and runs it: requests (including value-type
-responses), validation, exception handlers, notifications, streams, timeouts, retry and ASP.NET Core results.
+`DotCourier`, `DotCourier.AspNetCore`, `DotCourier.Resilience` and `DotCourier.Caching` work in apps
+published with `<PublishAot>true</PublishAot>`, together with `DotCourier.SourceGenerator` in every project
+that declares handlers. CI publishes a test app with Native AOT on every push and runs it: requests
+(including value-type responses), validation, exception handlers, notifications, streams, timeouts, retry,
+caching, idempotency and ASP.NET Core results.
 
 Under Native AOT, DotCourier runs in **compile-time mode**: nothing is built with `MakeGenericType` at
 runtime. Behaviors are registered already closed for each request (by the core, by each package, and by the
@@ -812,6 +814,9 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResol
 [JsonSerializable(typeof(Response<Unit>))]
 [JsonSerializable(typeof(IReadOnlyList<ValidationError>))] // the details of a 400
 internal sealed partial class AppJson : JsonSerializerContext;
+
+// Caching: results (and requests, for the keys) through the same context.
+cfg.AddCaching(o => o.ResultSerializerOptions = AppJson.Default.Options);
 ```
 
 - **Find problems before publishing:** set `cfg.RequireCompileTimeRegistrations = true` in your tests to run
@@ -822,11 +827,14 @@ internal sealed partial class AppJson : JsonSerializerContext;
   - assemblies without the generator.
 - **Library authors:** register a `BehaviorTypes` with `cfg.AddBehaviorTypes(...)` next to your
   `AddOpenBehavior` calls, so your open behaviors can be closed too.
-- **Not AOT-ready yet:**
-  - `DotCourier.FluentValidation` (FluentValidation itself isn't);
-  - `DotCourier.Caching` and `DotCourier.Outbox.EntityFrameworkCore`, whose JSON serialization uses reflection;
-  - `DotCourier.EntityFrameworkCore` (EF Core's own AOT support is still experimental);
-  - `DotCourier.Kafka`.
+- **Caching:** HybridCache's own default serializer uses reflection, so a trimmed app gets warnings from
+  `Microsoft.Extensions.Caching.Hybrid` (IL2026/IL2070). With `ResultSerializerOptions` set, that serializer is
+  never used for DotCourier's entries. On net10.0, DotCourier.Caching uses HybridCache 10.x.
+- **Outbox, transactions, Kafka:** DotCourier's own code is free of trim/AOT warnings. The outbox serializes
+  through `CourierOutboxOptions.JsonSerializerOptions` (give it your context) and maps stored type names
+  through the generated registrations. These packages still don't claim AOT support: EF Core's own Native
+  AOT support is experimental, and Confluent.Kafka is not verified there.
+- **Not AOT-ready:** `DotCourier.FluentValidation` (FluentValidation itself isn't).
 
 ## 🔀 Migrating from MediatR
 

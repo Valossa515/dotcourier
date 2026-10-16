@@ -5,6 +5,7 @@
     <Description>Query caching, idempotent commands and cache invalidation for DotCourier, on Microsoft HybridCache: in-memory by default, shared across instances (e.g. Redis) when an IDistributedCache is registered.</Description>
     <RootNamespace>DotCourier.Caching</RootNamespace>
     <PackageTags>$(PackageTags);caching;idempotency;hybridcache;redis</PackageTags>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>

@@ -24,7 +24,7 @@ internal sealed partial class TransactionBehavior<TRequest, TResponse> : IPipeli
 {
     private static readonly bool OptedOut = typeof(TRequest).GetCustomAttribute<NotTransactionalAttribute>(inherit: true) is not null;
     private static readonly bool OptedIn = typeof(TRequest).GetCustomAttribute<TransactionalAttribute>(inherit: true) is not null
-        || typeof(TRequest).GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>));
+        || typeof(ICommand<TResponse>).IsAssignableFrom(typeof(TRequest));
     private static readonly string RequestName = CourierDiagnostics.GetRequestName(typeof(TRequest));
 
     private readonly IServiceProvider _services;

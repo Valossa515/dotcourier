@@ -73,6 +73,20 @@ dotcourier/
 
 ## Key mechanics
 
+- **AOT for Caching / Outbox / Kafka (0.12.0):** JSON goes through each package's internal `Json` helper:
+  options with a `TypeInfoResolver` → `options.GetTypeInfo(type)`; options without one, while reflection is
+  enabled → the old reflection overloads (suppressed: never reached under AOT). `GetTypeInfo` on options
+  without a resolver *throws*, which is why the helper exists. Caching: `ResultSerializerOptions` registers
+  `CourierHybridSerializerFactory` (types the options don't know fall through to HybridCache's default) and
+  is also the key options' fallback; `DefaultKeyOptions = new()` keeps keys identical to the old
+  `JsonSerializerOptions.Default`. HybridCache pinned 9.10.0 on net8.0 and **10.11.0 on net10.0** (CPM
+  conditional `PackageVersion`); both versions' default serializer warns under trimming, so the smoke app keeps
+  IL2026/IL2070/IL2104 as warnings (our own code is policed by the build analyzers). "Is it a query/command"
+  uses `typeof(IQuery<TResponse>).IsAssignableFrom(typeof(TRequest))` instead of `GetInterfaces()`. Outbox and
+  Kafka resolve stored type names through `GeneratedCourierRegistry.NotificationTypes` (filled by generated
+  `Notification<T>()`), falling back to `Type.GetType`. Outbox, EF and Kafka enable the trim/AOT analyzers but
+  not `IsAotCompatible` (EF Core and Confluent.Kafka aren't verified under AOT).
+
 - **Idempotency lock (0.12.0):** with an `IIdempotencyLock` registered, `IdempotencyBehavior.RunLocked` checks
   for a recorded result (`CachedExecution.TryGetAsync`: `GetOrCreateAsync` with read-only flags and a factory
   that throws `NotRecordedException`, since `default(T)` can be a legit recorded value), then polls

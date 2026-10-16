@@ -5,6 +5,9 @@
     <Description>Delivers DotCourier's transactional outbox to Kafka: the stored events are published to topics (acks=all, idempotent producer) instead of the in-process handlers, so other services can consume them.</Description>
     <RootNamespace>DotCourier.Kafka</RootNamespace>
     <PackageTags>$(PackageTags);kafka;outbox;messaging;events;confluent</PackageTags>
+    <!-- Our code is kept free of trim/AOT warnings; Confluent.Kafka (librdkafka) is not verified under Native AOT. -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
   </PropertyGroup>
 
   <ItemGroup>

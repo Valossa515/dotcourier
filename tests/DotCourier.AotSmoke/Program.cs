@@ -23,7 +23,8 @@ var services = new ServiceCollection()
             r.Retry.MaxAttempts = 3;
             r.Retry.Delay = TimeSpan.Zero;
             r.Retry.UseJitter = false;
-        })))
+        }))
+        .AddCaching(o => o.ResultSerializerOptions = SmokeJson.Default.Options))
     .ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, SmokeJson.Default))
     .BuildServiceProvider();
 
@@ -73,6 +74,16 @@ await using (var scope = services.CreateAsyncScope())
     checks.Equal("Response<T> with source-generated JSON", """{"data":"pong: json","error":null,"success":true,"statusCode":200}""", json);
 
     checks.Equal("resilience: retry absorbs two failures", "ok after 3", await courier.Send(new Flaky()));
+
+    log.Clear();
+    var quote = await courier.Send(new GetQuote("pen"));
+    checks.Equal("caching: [Cacheable] query", quote, await courier.Send(new GetQuote("pen")));
+    checks.Equal("  ...the handler ran once", "trace>,quote pen,<trace", log.Joined);
+
+    log.Clear();
+    var order = await courier.Send(new PlaceOrder("ana"));
+    checks.Equal("caching: [Idempotent] command returns the recorded result", order, await courier.Send(new PlaceOrder("ana")));
+    checks.Equal("  ...the command ran once", "trace>,order ana,<trace", log.Joined);
 
     var http = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
     using var body = new MemoryStream();
