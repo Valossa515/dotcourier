@@ -84,6 +84,33 @@ public sealed class ConflictHandler : ICommandHandler<Conflict>
 
 public sealed record Orphan : IRequest<int>;
 
+[Cacheable]
+public sealed record GetQuote(string Sku) : IQuery<Quote>;
+
+/// <summary>A record (not a primitive), so HybridCache stores it serialized: that goes through the app's JSON context.</summary>
+public sealed record Quote(string Sku, decimal Price);
+
+public sealed class GetQuoteHandler(CallLog log) : IQueryHandler<GetQuote, Quote>
+{
+    public Task<Quote> Handle(GetQuote request, CancellationToken ct)
+    {
+        log.Add("quote " + request.Sku);
+        return Task.FromResult(new Quote(request.Sku, 9.90m));
+    }
+}
+
+[Idempotent]
+public sealed record PlaceOrder(string Customer) : ICommand<string>;
+
+public sealed class PlaceOrderHandler(CallLog log) : ICommandHandler<PlaceOrder, string>
+{
+    public Task<string> Handle(PlaceOrder request, CancellationToken ct)
+    {
+        log.Add("order " + request.Customer);
+        return Task.FromResult(Guid.NewGuid().ToString("N"));
+    }
+}
+
 public sealed record Flaky : IRequest<string>;
 
 public sealed class FlakyHandler : IRequestHandler<Flaky, string>
@@ -183,6 +210,9 @@ public sealed class TraceStreamBehavior<TRequest, TResponse>(CallLog log) : IStr
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
 [JsonSerializable(typeof(Response<string>))]
 [JsonSerializable(typeof(Response<DotCourier.Unit>))]
+[JsonSerializable(typeof(GetQuote))]
+[JsonSerializable(typeof(Quote))]
+[JsonSerializable(typeof(PlaceOrder))]
 internal sealed partial class SmokeJson : JsonSerializerContext;
 
 internal sealed class Checks

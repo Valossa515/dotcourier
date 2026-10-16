@@ -29,10 +29,15 @@ public static class CourierCachingExtensions
                 services.TryAddSingleton(options);
                 services.TryAddSingleton<CacheKeys>();
                 services.TryAddSingleton<ICourierCache, CourierCache>();
-                services.AddHybridCache();
+                var hybrid = services.AddHybridCache();
+                if (options.ResultSerializerOptions is { } serializer)
+                {
+                    hybrid.AddSerializerFactory(new CourierHybridSerializerFactory(serializer));
+                }
             })
             .AddOpenBehavior(typeof(IdempotencyBehavior<,>), BehaviorOrder.Idempotency)
             .AddOpenBehavior(typeof(CacheInvalidationBehavior<,>), BehaviorOrder.CacheInvalidation)
-            .AddOpenBehavior(typeof(CachingBehavior<,>), BehaviorOrder.Caching);
+            .AddOpenBehavior(typeof(CachingBehavior<,>), BehaviorOrder.Caching)
+            .AddBehaviorTypes(CachingBehaviorTypes.Instance);
     }
 }

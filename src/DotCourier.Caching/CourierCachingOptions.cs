@@ -41,7 +41,15 @@ public sealed class CourierCachingOptions
     /// </summary>
     public TimeSpan IdempotencyLockWait { get; set; } = TimeSpan.FromSeconds(10);
 
-    /// <summary>Serializer options used to turn a request into its key (not to store results). Default: <see cref="JsonSerializerOptions.Default"/>.</summary>
+    /// <summary>
+    /// Serializer options for the stored results (and, unless <see cref="KeySerializerOptions"/> is set, for
+    /// the requests turned into keys). Default <c>null</c>: HybridCache's own serializer, which uses
+    /// reflection. <b>Required under Native AOT</b>: options whose <c>TypeInfoResolver</c> is a source-generated
+    /// context listing your cached results and requests.
+    /// </summary>
+    public JsonSerializerOptions? ResultSerializerOptions { get; set; }
+
+    /// <summary>Serializer options used to turn a request into its key (not to store results). Default: the defaults of <see cref="JsonSerializer"/>.</summary>
     public JsonSerializerOptions? KeySerializerOptions { get; set; }
 
     internal void Validate()

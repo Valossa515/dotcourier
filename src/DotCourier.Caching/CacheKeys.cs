@@ -16,6 +16,13 @@ internal sealed class CacheKeys(CourierCachingOptions options)
 {
     private static readonly ConcurrentDictionary<Type, string> TypeIds = new();
 
+    // Same settings as JsonSerializerOptions.Default, so existing keys are unchanged (Default itself is
+    // reflection-only, so it cannot be referenced in a trimmable package).
+    private static readonly JsonSerializerOptions DefaultKeyOptions = new();
+
+    /// <summary>Key options, then result options (they know the app's types under Native AOT), then defaults.</summary>
+    private JsonSerializerOptions KeyOptions => options.KeySerializerOptions ?? options.ResultSerializerOptions ?? DefaultKeyOptions;
+
     public string CacheTag => options.KeyPrefix + ":cache";
 
     public string IdempotencyTag => options.KeyPrefix + ":idem";
@@ -46,7 +53,7 @@ internal sealed class CacheKeys(CourierCachingOptions options)
         {
             try
             {
-                var json = JsonSerializer.SerializeToUtf8Bytes(request, type, options.KeySerializerOptions ?? JsonSerializerOptions.Default);
+                var json = Json.SerializeToUtf8Bytes(request, type, KeyOptions);
                 discriminator = Convert.ToHexString(SHA256.HashData(json));
             }
             catch (Exception ex) when (ex is NotSupportedException or JsonException or InvalidOperationException)

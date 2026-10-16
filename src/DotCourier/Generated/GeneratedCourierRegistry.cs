@@ -18,6 +18,15 @@ namespace DotCourier.Generated;
 public static class GeneratedCourierRegistry
 {
     private static readonly ConcurrentDictionary<Assembly, Action<GeneratedRegistrationContext>> Registrations = new();
+    private static readonly ConcurrentDictionary<Type, byte> Notifications = new();
+
+    /// <summary>
+    /// The notification types registered at compile time so far. Lets extension packages (e.g. the outbox)
+    /// map a stored type name back to its type without <c>Type.GetType</c>, which trimming cannot follow.
+    /// </summary>
+    public static IReadOnlyCollection<Type> NotificationTypes => (IReadOnlyCollection<Type>)Notifications.Keys;
+
+    internal static void AddNotificationType(Type type) => Notifications.TryAdd(type, 0);
 
     /// <summary>Called from the generated module initializer of <paramref name="assembly"/>.</summary>
     public static void Register(Assembly assembly, Action<GeneratedRegistrationContext> register)
@@ -111,8 +120,11 @@ public sealed class GeneratedRegistrationContext
 
     /// <summary>Prepares the dispatch of a notification type, so publishing it needs no runtime code generation.</summary>
     public void Notification<TNotification>()
-        where TNotification : INotification =>
+        where TNotification : INotification
+    {
         Courier.AddNotificationWrapper(typeof(TNotification), static () => new NotificationHandlerWrapperImpl<TNotification>());
+        GeneratedCourierRegistry.AddNotificationType(typeof(TNotification));
+    }
 
     /// <summary>Registers an exception handler, plus the typed invoker Native AOT uses to call it.</summary>
     public void ExceptionHandler<TRequest, TResponse, TException, [DynamicallyAccessedMembers(Constructors)] THandler>()

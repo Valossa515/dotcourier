@@ -510,6 +510,7 @@ ser serializáveis com System.Text.Json.
 | `KeyPrefix` | `dotcourier` | para dividir um servidor de cache entre aplicações |
 | `IdempotencyLockDuration` | 1 min | com trava: tempo máximo que um request a segura; mantenha acima do seu handler idempotente mais lento |
 | `IdempotencyLockWait` | 10 s | com trava: quanto uma duplicata espera antes de responder **409** |
+| `ResultSerializerOptions` | — | opções JSON dos resultados guardados (e das chaves); **obrigatório no Native AOT** (o seu contexto gerado) |
 
 ### Várias instâncias: a trava de idempotência
 
@@ -638,7 +639,7 @@ public sealed class PlaceOrderHandler(StoreDbContext db, IOutbox outbox) : IComm
 | `MaxAttempts` | 5 | depois disso, `Failed` (com `LastError` na linha) |
 | `ProcessingTimeout` | 1 min | tempo até uma mensagem abandonada ser entregue de novo |
 | `RunProcessor` | `true` | `false` nas instâncias que só gravam |
-| `JsonSerializerOptions` | padrão web | como as notificações são gravadas |
+| `JsonSerializerOptions` | padrão web | como as notificações são gravadas; passe o seu contexto gerado no Native AOT |
 
 A linha guarda a notificação em JSON e o tipo dela sem a versão do assembly, então mensagens gravadas
 antes de um deploy continuam sendo lidas depois dele.
@@ -799,11 +800,11 @@ montar em runtime os wrappers de cada request (`MakeGenericType`).
 
 ## 🚀 Native AOT
 
-`DotCourier`, `DotCourier.AspNetCore` e `DotCourier.Resilience` funcionam em apps publicados com
-`<PublishAot>true</PublishAot>`, junto com o `DotCourier.SourceGenerator` em cada projeto que declara
-handlers. O CI publica um app de teste com Native AOT a cada push e o executa: requests (inclusive com
-resposta de value type), validação, exception handlers, notificações, streams, timeouts, retry e os
-resultados do ASP.NET Core.
+`DotCourier`, `DotCourier.AspNetCore`, `DotCourier.Resilience` e `DotCourier.Caching` funcionam em apps
+publicados com `<PublishAot>true</PublishAot>`, junto com o `DotCourier.SourceGenerator` em cada projeto que
+declara handlers. O CI publica um app de teste com Native AOT a cada push e o executa: requests (inclusive
+com resposta de value type), validação, exception handlers, notificações, streams, timeouts, retry, cache,
+idempotência e os resultados do ASP.NET Core.
 
 Sob Native AOT, o DotCourier roda no **modo compile-time**: nada é montado com `MakeGenericType` em
 runtime. Os behaviors são registrados já fechados para cada request (pelo core, por cada pacote e pelo
@@ -820,6 +821,9 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResol
 [JsonSerializable(typeof(Response<Unit>))]
 [JsonSerializable(typeof(IReadOnlyList<ValidationError>))] // os detalhes de um 400
 internal sealed partial class AppJson : JsonSerializerContext;
+
+// Cache: resultados (e requests, para as chaves) pelo mesmo contexto.
+cfg.AddCaching(o => o.ResultSerializerOptions = AppJson.Default.Options);
 ```
 
 - **Ache os problemas antes de publicar:** ligue `cfg.RequireCompileTimeRegistrations = true` nos seus
@@ -830,11 +834,14 @@ internal sealed partial class AppJson : JsonSerializerContext;
   - assemblies sem o gerador.
 - **Autores de bibliotecas:** registrem um `BehaviorTypes` com `cfg.AddBehaviorTypes(...)` junto das
   chamadas a `AddOpenBehavior`, para que os seus behaviors abertos também possam ser fechados.
-- **Ainda não prontos para AOT:**
-  - `DotCourier.FluentValidation` (o próprio FluentValidation não é);
-  - `DotCourier.Caching` e `DotCourier.Outbox.EntityFrameworkCore`, cuja serialização JSON usa reflection;
-  - `DotCourier.EntityFrameworkCore` (o suporte a AOT do próprio EF Core ainda é experimental);
-  - `DotCourier.Kafka`.
+- **Cache:** o serializer padrão do próprio HybridCache usa reflection, então um app trimado recebe avisos
+  do `Microsoft.Extensions.Caching.Hybrid` (IL2026/IL2070, e IL3050 ao publicar com Native AOT). Com `ResultSerializerOptions` configurado, esse
+  serializer nunca é usado nas entradas do DotCourier. No net10.0, o DotCourier.Caching usa o HybridCache 10.x.
+- **Outbox, transações, Kafka:** o código do próprio DotCourier não tem avisos de trimming/AOT. O outbox
+  serializa por `CourierOutboxOptions.JsonSerializerOptions` (passe o seu contexto) e mapeia os nomes de tipo
+  gravados pelos registros gerados. Esses pacotes ainda não se declaram compatíveis com AOT: o suporte a
+  Native AOT do próprio EF Core é experimental, e o Confluent.Kafka não foi verificado nesse cenário.
+- **Não prontos para AOT:** `DotCourier.FluentValidation` (o próprio FluentValidation não é).
 
 ## 🔀 Migrando do MediatR
 

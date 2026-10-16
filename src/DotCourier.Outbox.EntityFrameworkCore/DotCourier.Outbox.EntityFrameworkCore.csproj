@@ -5,6 +5,10 @@
     <Description>Transactional outbox for DotCourier on EF Core: notifications are stored in the same transaction as your data and delivered afterwards, at least once, by a background processor.</Description>
     <RootNamespace>DotCourier.Outbox</RootNamespace>
     <PackageTags>$(PackageTags);outbox;transactional-outbox;entityframeworkcore;efcore;events</PackageTags>
+    <!-- Our code is kept free of trim/AOT warnings, but EF Core's own Native AOT support is still
+         experimental, so the package does not claim AOT compatibility. -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
   </PropertyGroup>
 
   <ItemGroup>
