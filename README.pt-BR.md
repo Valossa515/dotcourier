@@ -835,7 +835,7 @@ cfg.AddCaching(o => o.ResultSerializerOptions = AppJson.Default.Options);
 - **Autores de bibliotecas:** registrem um `BehaviorTypes` com `cfg.AddBehaviorTypes(...)` junto das
   chamadas a `AddOpenBehavior`, para que os seus behaviors abertos também possam ser fechados.
 - **Cache:** o serializer padrão do próprio HybridCache usa reflection, então um app trimado recebe avisos
-  do `Microsoft.Extensions.Caching.Hybrid` (IL2026/IL2070). Com `ResultSerializerOptions` configurado, esse
+  do `Microsoft.Extensions.Caching.Hybrid` (IL2026/IL2070, e IL3050 ao publicar com Native AOT). Com `ResultSerializerOptions` configurado, esse
   serializer nunca é usado nas entradas do DotCourier. No net10.0, o DotCourier.Caching usa o HybridCache 10.x.
 - **Outbox, transações, Kafka:** o código do próprio DotCourier não tem avisos de trimming/AOT. O outbox
   serializa por `CourierOutboxOptions.JsonSerializerOptions` (passe o seu contexto) e mapeia os nomes de tipo

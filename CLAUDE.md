@@ -81,7 +81,7 @@ dotcourier/
   is also the key options' fallback; `DefaultKeyOptions = new()` keeps keys identical to the old
   `JsonSerializerOptions.Default`. HybridCache pinned 9.10.0 on net8.0 and **10.11.0 on net10.0** (CPM
   conditional `PackageVersion`); both versions' default serializer warns under trimming, so the smoke app keeps
-  IL2026/IL2070/IL2104 as warnings (our own code is policed by the build analyzers). "Is it a query/command"
+  IL2026/IL2070/IL2104/IL3050 as warnings (our own code is policed by the build analyzers). "Is it a query/command"
   uses `typeof(IQuery<TResponse>).IsAssignableFrom(typeof(TRequest))` instead of `GetInterfaces()`. Outbox and
   Kafka resolve stored type names through `GeneratedCourierRegistry.NotificationTypes` (filled by generated
   `Notification<T>()`), falling back to `Type.GetType`. Outbox, EF and Kafka enable the trim/AOT analyzers but

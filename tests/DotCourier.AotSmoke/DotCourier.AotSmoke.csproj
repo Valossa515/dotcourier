@@ -15,12 +15,13 @@
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
     <!--
       Microsoft.Extensions.Caching.Hybrid's built-in JSON serializer uses reflection and is reachable from
-      AddHybridCache, so any trimmed app using HybridCache gets these from that assembly (9.x and 10.x alike).
+      AddHybridCache, so any trimmed or AOT app using HybridCache gets these from that assembly (9.x and 10.x
+      alike; ILC adds IL3050 for the same code).
       DotCourier registers its own serializer (ResultSerializerOptions), so that code never runs for its types.
       They stay warnings here; the same codes in DotCourier's own code are errors at build time
       (IsAotCompatible analyzers on every DotCourier package this app uses).
     -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2026;IL2070;IL2104</WarningsNotAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2026;IL2070;IL2104;IL3050</WarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
