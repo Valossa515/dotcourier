@@ -90,7 +90,7 @@ app.MapPost("/products", (CreateProduct c, ICourier courier) =>
 | Package | What it adds |
 |---|---|
 | [`DotCourier`](https://www.nuget.org/packages/DotCourier) | Dispatcher, pipeline, notifications, `Response<T>`, logging, validation, telemetry, timeouts |
-| [`DotCourier.AspNetCore`](https://www.nuget.org/packages/DotCourier.AspNetCore) | `Response<T>.ToResult()` (Minimal APIs) and `ToActionResult()` (MVC) |
+| [`DotCourier.AspNetCore`](https://www.nuget.org/packages/DotCourier.AspNetCore) | `Response<T>.ToResult()` (Minimal APIs), `ToActionResult()` (MVC) and an injectable converter with body formats and files |
 | [`DotCourier.Resilience`](https://www.nuget.org/packages/DotCourier.Resilience) | Retry, circuit breaker, rate limiter and bulkhead on Polly v8 |
 | [`DotCourier.FluentValidation`](https://www.nuget.org/packages/DotCourier.FluentValidation) | Runs your `IValidator<T>` in the pipeline; FluentValidation exceptions become 400 |
 | [`DotCourier.Caching`](https://www.nuget.org/packages/DotCourier.Caching) | Query caching, idempotent commands and cache invalidation on HybridCache (Redis-ready) |
@@ -250,6 +250,48 @@ builder.Services.AddCourier(cfg =>
 `CourierMessage.From(() => ...)` runs on every error, on the request's own flow, so with ASP.NET
 Core request localization the same `.resx` answers in Portuguese or English per request. Messages
 you write yourself (`Response.NotFound("...")`, `CourierException`) are untouched.
+
+### HTTP results: body formats, JSON options and files
+
+`ToResult()` and `ToActionResult()` send the whole `Response<T>` as JSON with its status code. To choose
+another body shape or your own JSON options, register the converter and inject it:
+
+```csharp
+builder.Services.AddCourier(cfg => cfg
+    .RegisterServicesFromAssemblyContaining<Program>()
+    .AddResponseConverter(o =>
+    {
+        o.Format = ResponseBodyFormat.DataOrErrorList;
+        o.SerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Converters = { new JsonStringEnumConverter() },
+        };
+    }));
+
+public class ProductsController(ICourier courier, IResponseConverter converter) : ControllerBase
+{
+    [HttpPost]
+    public Task<IActionResult> Create(CreateProduct command) => converter.ToActionResult(courier.Dispatch(command));
+}
+
+app.MapGet("/products/{id}", (Guid id, ICourier c, IResponseConverter r) => r.ToResult(c.Dispatch(new GetProduct(id))));
+```
+
+| `Format` | Success | Failure |
+|---|---|---|
+| `Envelope` (default) | `{ "data", "error", "errorCode", "success", "statusCode" }` | the same envelope |
+| `DataOrProblemDetails` | only the data (204 when there is none) | RFC 7807: `title`, `status`, `code`, and `errors` per field for validation |
+| `DataOrErrorList` | only the data (204 when there is none) | `[{ "code", "message", "field" }]`, one per validation error |
+
+- **Files:** a handler returning `Response<FileResponse>` (from bytes or a stream, with an optional download
+  name) is sent as a file download, by the converter and by `ToResult()`/`ToActionResult()`. `FileResponse` is
+  in the core package, so handlers don't depend on ASP.NET Core.
+- **Ready-made results:** a handler returning an `IActionResult` (MVC) or `IResult` (Minimal APIs) has it
+  passed through as is.
+- **No response:** a `null` response becomes a 500 with `cfg.Messages.UnexpectedError` (message and code).
+- `SerializerOptions` default to the application's (`AddJsonOptions` for MVC, `ConfigureHttpJsonOptions` for
+  Minimal APIs). Under Native AOT, the converter's JSON goes through your source-generated context.
 
 ## 🧩 Pipeline
 

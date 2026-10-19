@@ -8,8 +8,8 @@ DotCourier is pre-1.0: only the latest minor release receives fixes.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.12.x  | ✅ Yes    |
-| < 0.12  | ❌ No     |
+| 0.13.x  | ✅ Yes    |
+| < 0.13  | ❌ No     |
 
 ## Reporting a Vulnerability
 
