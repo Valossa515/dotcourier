@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Json;
@@ -7,26 +9,37 @@ using Microsoft.Extensions.Options;
 namespace DotCourier;
 
 /// <summary>
-/// Writes a <see cref="Response{T}"/> as JSON with its status code, using the application's JSON options
-/// (<c>ConfigureHttpJsonOptions</c>). It asks those options for the type's metadata instead of serializing
-/// with reflection, so it works under Native AOT once a source-generated context lists <c>Response&lt;T&gt;</c>.
+/// Writes a value as JSON with a status code, using <paramref name="serializerOptions"/> or else the application's
+/// (<c>ConfigureHttpJsonOptions</c>). It asks those options for the type's metadata instead of serializing with
+/// reflection, so it works under Native AOT once a source-generated context lists the type.
 /// </summary>
-internal sealed class CourierJsonResult<T>(Response<T> response) : IResult, IStatusCodeHttpResult, IValueHttpResult, IValueHttpResult<Response<T>>
+internal sealed class CourierJsonResult<TValue>(TValue value, int statusCode, JsonSerializerOptions? serializerOptions = null)
+    : IResult, IStatusCodeHttpResult, IValueHttpResult, IValueHttpResult<TValue>
 {
-    public int? StatusCode => response.StatusCode;
+    private const string Justification = "Only for options without a TypeInfoResolver while reflection-based serialization is enabled, which it never is under Native AOT.";
 
-    public Response<T> Value => response;
+    public int? StatusCode => statusCode;
 
-    object? IValueHttpResult.Value => response;
+    public TValue Value => value;
+
+    object? IValueHttpResult.Value => value;
 
     public Task ExecuteAsync(HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
-        var options = httpContext.RequestServices.GetService<IOptions<JsonOptions>>()?.Value.SerializerOptions
+        var options = serializerOptions
+            ?? httpContext.RequestServices.GetService<IOptions<JsonOptions>>()?.Value.SerializerOptions
             ?? new JsonOptions().SerializerOptions;
-        var typeInfo = (JsonTypeInfo<Response<T>>)options.GetTypeInfo(typeof(Response<T>));
 
-        httpContext.Response.StatusCode = response.StatusCode;
-        return httpContext.Response.WriteAsJsonAsync(response, typeInfo, contentType: null, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = statusCode;
+        return options.TypeInfoResolver is null && JsonSerializer.IsReflectionEnabledByDefault
+            ? WriteWithReflection(httpContext, options)
+            : httpContext.Response.WriteAsJsonAsync(value, (JsonTypeInfo<TValue>)options.GetTypeInfo(typeof(TValue)), contentType: null, httpContext.RequestAborted);
     }
+
+    // GetTypeInfo throws on options without a resolver (e.g. new JsonSerializerOptions { ... } in your own code).
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Justification)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Justification)]
+    private Task WriteWithReflection(HttpContext httpContext, JsonSerializerOptions options) =>
+        httpContext.Response.WriteAsJsonAsync(value, options, httpContext.RequestAborted);
 }
