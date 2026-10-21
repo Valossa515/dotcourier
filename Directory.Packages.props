@@ -34,7 +34,7 @@
 
     <!-- DotCourier.SourceGenerator: Roslyn 4.8 = .NET SDK 8.0.100, the oldest SDK DotCourier supports -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0" />
 
     <!-- Test-only -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.32" />
