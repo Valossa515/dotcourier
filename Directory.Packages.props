@@ -21,7 +21,7 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.11.0" Condition="'$(TargetFramework)' == 'net10.0'" />
 
     <!-- DotCourier.Caching.Redis: same StackExchange.Redis as Microsoft.Extensions.Caching.StackExchangeRedis, so nothing is forced up -->
-    <PackageVersion Include="StackExchange.Redis" Version="2.7.27" />
+    <PackageVersion Include="StackExchange.Redis" Version="3.4.5" />
 
     <!-- DotCourier.EntityFrameworkCore: EF 8 runs on net8.0 and net10.0; apps on EF 9/10 lift it -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.32" />
