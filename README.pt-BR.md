@@ -368,6 +368,12 @@ public sealed class SignupValidator : AbstractValidator<Signup>
 - Seus `IValidator<T>` rodam no passo de validação, antes do handler, e as falhas se juntam às do
   DataAnnotations num **único 400**. Os validators dos assemblies escaneados são registrados para
   você (passe `registerValidators: false` se já usa `AddValidatorsFromAssembly`).
+- Um validator genérico vale para todo request que satisfaz as restrições dele, sem uma subclasse por
+  request: `PageValidator<T> : AbstractValidator<T> where T : PageSettings` valida todas as consultas
+  paginadas. Uma subclasse que acrescenta regras (`OrdersValidator : PageValidator<GetOrders>`)
+  substitui o genérico naquele request, então as regras comuns não rodam duas vezes. Um validator
+  genérico de outro formato (`ItemsValidator<T> : AbstractValidator<Batch<T>>`) não pode ser registrado
+  aberto: ele aparece num warning no log, e você o registra fechado.
 - Uma `ValidationException` do FluentValidation lançada **dentro** do handler (por exemplo com
   `ValidateAndThrowAsync`) também vira 400. Sem este pacote ela é uma exceção inesperada e o
   `Dispatch` responde 500. A conversão acontece colada ao handler, então o retry nunca repete um
