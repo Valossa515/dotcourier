@@ -24,7 +24,7 @@
     <PackageVersion Include="StackExchange.Redis" Version="2.7.27" />
 
     <!-- DotCourier.EntityFrameworkCore: EF 8 runs on net8.0 and net10.0; apps on EF 9/10 lift it -->
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.32" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.21" />
 
     <!-- DotCourier.Outbox.EntityFrameworkCore: background processor -->
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
