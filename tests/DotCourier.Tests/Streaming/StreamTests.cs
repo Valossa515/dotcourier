@@ -142,6 +142,7 @@ public class StreamTests
     public async Task One_activity_spans_the_stream_and_parents_the_handler_spans()
     {
         var activities = new List<Activity>();
+        ActivityTraceId traceId;
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == CourierDiagnostics.SourceName || source.Name == CountToHandler.Source.Name,
@@ -157,14 +158,20 @@ public class StreamTests
         ActivitySource.AddActivityListener(listener);
         var (services, _) = TestHost.Build();
 
-        await ReadAll(services.Courier().CreateStream(new CountTo(3)));
+        // The listener is global: other tests stream CountTo in parallel, so keep to this test's trace.
+        using (var test = new Activity("test").SetIdFormat(ActivityIdFormat.W3C).Start())
+        {
+            await ReadAll(services.Courier().CreateStream(new CountTo(3)));
+            traceId = test.TraceId;
+        }
 
         Activity stream;
         Activity[] reads;
         lock (activities)
         {
-            stream = Assert.Single(activities, a => a.DisplayName == "courier CountTo");
-            reads = activities.Where(a => a.DisplayName.StartsWith("read ", StringComparison.Ordinal) && a.TraceId == stream.TraceId).ToArray();
+            var ours = activities.Where(a => a.TraceId == traceId).ToArray();
+            stream = Assert.Single(ours, a => a.DisplayName == "courier CountTo");
+            reads = ours.Where(a => a.DisplayName.StartsWith("read ", StringComparison.Ordinal)).ToArray();
         }
 
         Assert.Equal(3, stream.GetTagItem("courier.stream.items"));

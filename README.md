@@ -367,6 +367,12 @@ public sealed class SignupValidator : AbstractValidator<Signup>
 - Your `IValidator<T>`s run in the validation step, before the handler, and their failures are
   merged with DataAnnotations into a **single 400**. Validators in the scanned assemblies are
   registered for you (pass `registerValidators: false` if you already use `AddValidatorsFromAssembly`).
+- A generic validator applies to every request that satisfies its constraints, with no subclass per
+  request: `PageValidator<T> : AbstractValidator<T> where T : PageSettings` validates every paged query.
+  A subclass that adds rules (`OrdersValidator : PageValidator<GetOrders>`) replaces it for that
+  request, so the shared rules do not run twice. A generic validator of another shape
+  (`ItemsValidator<T> : AbstractValidator<Batch<T>>`) cannot be registered open; it is logged as a
+  warning, and you register it closed yourself.
 - A FluentValidation `ValidationException` thrown **inside** a handler (e.g. `ValidateAndThrowAsync`)
   also becomes a 400. Without this package it is an unexpected exception and `Dispatch` answers 500.
   The translation happens right around the handler, so retry never repeats an invalid request.
