@@ -9,8 +9,8 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
 
     <!-- DotCourier.Resilience -->
-    <PackageVersion Include="Polly.Core" Version="8.8.0" />
-    <PackageVersion Include="Polly.RateLimiting" Version="8.8.0" />
+    <PackageVersion Include="Polly.Core" Version="8.8.1" />
+    <PackageVersion Include="Polly.RateLimiting" Version="8.8.1" />
 
     <!-- DotCourier.FluentValidation -->
     <PackageVersion Include="FluentValidation" Version="12.2.0" />
